@@ -37,6 +37,7 @@ from . import win32 as w
 from .archive import DailyArchiver
 from .engine import (
     CaptureConfig, CaptureEngine, ConfigError, Target,
+    FOLDER_APP, FOLDER_FLAT, FOLDER_SESSION,
     TARGET_SCREEN, TARGET_WINDOW, resolve_target, unknown_placeholders,
 )
 
@@ -155,7 +156,21 @@ METHOD_CHOICES = [
     ("屏幕区域（所见即所得）", w.METHOD_SCREEN),
 ]
 FORMAT_CHOICES = ["png", "jpg", "bmp", "webp"]
+FOLDER_CHOICES = [
+    ("按应用复用同一文件夹（推荐）", FOLDER_APP),
+    ("每次开始新建带时间戳的文件夹", FOLDER_SESSION),
+    ("不用子目录，直接放在保存目录", FOLDER_FLAT),
+]
 QUICK_INTERVALS = [1, 2, 5, 10, 30, 60]
+# 运行中即时生效时，字段名换成中文提示
+LIVE_FIELD_NAMES = {
+    "interval": "截图间隔", "start_delay": "首张延迟", "max_shots": "数量上限",
+    "max_duration": "最长运行时长", "method": "截图方式", "image_format": "图片格式",
+    "jpeg_quality": "图片质量", "filename_pattern": "文件名模板", "output_dir": "保存目录",
+    "folder_mode": "子目录方式", "skip_unchanged": "跳过相同画面",
+    "write_manifest": "截图清单", "client_only": "只截客户区",
+    "capture_cursor": "鼠标光标", "activate_before_capture": "截图前激活窗口",
+}
 # 版本 2 起默认保存目录改为「程序目录\ScreenCapture」，旧版本记录要重设一次
 SETTINGS_VERSION = 4
 
@@ -271,6 +286,53 @@ class MainWindow(QMainWindow):
         body.addLayout(right, 2)
 
         outer.addLayout(self._build_actions())
+        self._wire_live_updates()
+
+    def _wire_live_updates(self) -> None:
+        """把各控件的改动接到 apply_live_config：运行中改参数立刻生效。"""
+        self.live_timer = QTimer(self)
+        self.live_timer.setSingleShot(True)
+        self.live_timer.timeout.connect(self.apply_live_config)
+        immediate = (self.method_combo, self.folder_combo)
+        for combo in immediate:
+            combo.currentIndexChanged.connect(lambda *_: self.live_timer.start(120))
+        for spin in (self.interval_spin, self.delay_spin, self.count_spin,
+                     self.duration_spin, self.quality_spin):
+            spin.valueChanged.connect(lambda *_: self.live_timer.start(300))
+        self.format_combo.currentIndexChanged.connect(lambda *_: self.live_timer.start(300))
+        # 文本类改动防抖久一点，避免边打字边改
+        self.output_edit.textChanged.connect(lambda *_: self.live_timer.start(600))
+        self.pattern_edit.textChanged.connect(lambda *_: self.live_timer.start(600))
+        for box in (self.skip_check, self.manifest_check, self.client_check,
+                    self.cursor_check, self.activate_check):
+            box.stateChanged.connect(lambda *_: self.live_timer.start(200))
+
+    def apply_live_config(self) -> None:
+        """把界面上的当前设置应用给正在运行的任务（无需停止再开始）。"""
+        if self.engine is None or not self.engine.running:
+            return
+        values = {
+            "interval": float(self.interval_spin.value()),
+            "start_delay": float(self.delay_spin.value()),
+            "max_shots": int(self.count_spin.value()),
+            "max_duration": float(self.duration_spin.value()),
+            "method": self.current_method(),
+            "image_format": self.format_combo.currentText(),
+            "jpeg_quality": int(self.quality_spin.value()),
+            "filename_pattern": self.pattern_edit.text().strip() or "{app}_{date}_{time}_{index:04d}",
+            "output_dir": self.output_edit.text().strip(),
+            "folder_mode": self.current_folder_mode(),
+            "skip_unchanged": self.skip_check.isChecked(),
+            "write_manifest": self.manifest_check.isChecked(),
+            "client_only": self.client_check.isChecked(),
+            "capture_cursor": self.cursor_check.isChecked(),
+            "activate_before_capture": self.activate_check.isChecked(),
+        }
+        applied = self.engine.apply_config(**values)
+        if applied:
+            names = "、".join(LIVE_FIELD_NAMES.get(key, key) for key in applied)
+            self.append_log(f"已即时生效（无需重启任务）：{names}")
+            logger.info("运行中修改参数并即时生效：%s", ", ".join(applied))
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -521,6 +583,17 @@ class MainWindow(QMainWindow):
         grid.addLayout(out_row, row, 1)
         row += 1
 
+        grid.addWidget(QLabel("子目录方式"), row, 0)
+        self.folder_combo = QComboBox()
+        for label, _value in FOLDER_CHOICES:
+            self.folder_combo.addItem(label)
+        self.folder_combo.setToolTip(
+            "按应用复用（默认）：同一个应用始终用同一个文件夹，不会每次新建；\n"
+            "每次新建：每次开始都建一个带时间戳的文件夹；\n"
+            "不用子目录：截图直接放在保存目录里")
+        grid.addWidget(self.folder_combo, row, 1)
+        row += 1
+
         options_card = QFrame(objectName="SubCard")
         options_layout = QVBoxLayout(options_card)
         options_layout.setContentsMargins(12, 10, 12, 12)
@@ -528,8 +601,6 @@ class MainWindow(QMainWindow):
         options_layout.addWidget(QLabel("更多选项", objectName="SubTitle"))
 
         self.skip_check = QCheckBox("画面无变化时跳过保存")
-        self.subdir_check = QCheckBox("每次开始创建独立子目录")
-        self.subdir_check.setChecked(True)
         self.manifest_check = QCheckBox("生成截图清单 CSV")
         self.manifest_check.setChecked(True)
         self.client_check = QCheckBox("只截客户区（去掉标题栏）")
@@ -559,7 +630,7 @@ class MainWindow(QMainWindow):
         options_grid.setHorizontalSpacing(18)
         options_grid.setVerticalSpacing(9)
         boxes = (
-            self.skip_check, self.subdir_check, self.manifest_check,
+            self.skip_check, self.manifest_check,
             self.client_check, self.cursor_check, self.activate_check,
             self.archive_check, self.archive_delete_check,
             self.monitor_check, self.tray_check,
@@ -880,6 +951,10 @@ class MainWindow(QMainWindow):
         if method == w.METHOD_AUTO and not _wgc_available():
             self.append_log("提示：当前环境没有可用的 WGC，自动方式会退回 GDI 截图。")
 
+    def current_folder_mode(self) -> str:
+        index = max(0, self.folder_combo.currentIndex())
+        return FOLDER_CHOICES[index][1]
+
     def current_method(self) -> str:
         index = max(0, self.method_combo.currentIndex())
         return METHOD_CHOICES[index][1]
@@ -920,7 +995,7 @@ class MainWindow(QMainWindow):
             max_duration=float(self.duration_spin.value()),
             method=self.current_method(),
             skip_unchanged=self.skip_check.isChecked(),
-            session_subdir=self.subdir_check.isChecked(),
+            folder_mode=self.current_folder_mode(),
             image_format=self.format_combo.currentText(),
             jpeg_quality=int(self.quality_spin.value()),
             filename_pattern=self.pattern_edit.text().strip() or "{app}_{date}_{time}_{index:04d}",
@@ -1122,7 +1197,7 @@ class MainWindow(QMainWindow):
         s.setValue("pattern", self.pattern_edit.text())
         s.setValue("output", self.output_edit.text())
         s.setValue("skip", self.skip_check.isChecked())
-        s.setValue("subdir", self.subdir_check.isChecked())
+        s.setValue("folder_mode", self.current_folder_mode())
         s.setValue("manifest", self.manifest_check.isChecked())
         s.setValue("client", self.client_check.isChecked())
         s.setValue("cursor", self.cursor_check.isChecked())
@@ -1156,7 +1231,11 @@ class MainWindow(QMainWindow):
         else:
             self.output_edit.setText(str(s.value("output", str(default_output_dir()))))
         self.skip_check.setChecked(s.value("skip", False, type=bool))
-        self.subdir_check.setChecked(s.value("subdir", True, type=bool))
+        mode = str(s.value("folder_mode", FOLDER_APP))
+        for index, (_label, value) in enumerate(FOLDER_CHOICES):
+            if value == mode:
+                self.folder_combo.setCurrentIndex(index)
+                break
         self.manifest_check.setChecked(s.value("manifest", True, type=bool))
         self.client_check.setChecked(s.value("client", False, type=bool))
         self.cursor_check.setChecked(s.value("cursor", False, type=bool))

@@ -226,7 +226,7 @@ class CaptureApp:
         checks = ttk.Frame(settings)
         checks.grid(row=row, column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Checkbutton(checks, text="画面无变化时跳过保存", variable=self.skip_unchanged_var).pack(anchor="w")
-        ttk.Checkbutton(checks, text="每次开始创建独立子目录", variable=self.session_subdir_var).pack(anchor="w")
+        ttk.Checkbutton(checks, text="每次开始新建时间戳子目录（不勾选则按应用复用）", variable=self.session_subdir_var).pack(anchor="w")
         ttk.Checkbutton(checks, text="生成截图清单 capture_manifest.csv",
                         variable=self.manifest_var).pack(anchor="w")
 
@@ -409,7 +409,7 @@ class CaptureApp:
             max_duration=duration,
             method=method,
             skip_unchanged=self.skip_unchanged_var.get(),
-            session_subdir=self.session_subdir_var.get(),
+            folder_mode="session" if self.session_subdir_var.get() else "flat",
             image_format=self.format_var.get(),
             jpeg_quality=quality,
             filename_pattern=self.pattern_var.get().strip() or "{app}_{date}_{time}_{index:04d}",

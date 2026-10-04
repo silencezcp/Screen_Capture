@@ -88,7 +88,7 @@ class QtUiTests(unittest.TestCase):
         self.win.output_edit.setText(str(target_dir))
         self.win.interval_spin.setValue(0.4)
         self.win.count_spin.setValue(4)
-        self.win.subdir_check.setChecked(False)
+        self.win.folder_combo.setCurrentIndex(2)   # 不用子目录
         self.assertFalse(self.win.monitor_check.isChecked(),
                          "默认不勾选：最小化后窗口应留在任务栏，方便找回")
         self.win.on_start()
@@ -115,11 +115,76 @@ class QtUiTests(unittest.TestCase):
         self.pump(0.2)
         self.assertFalse(self.win.monitoring, "恢复窗口后应退出监听模式")
 
+    def test_folder_reuse_same_app(self):
+        """同一个应用连续跑两次任务，应当复用同一个文件夹（不再每次新建）。"""
+        import shutil as _shutil
+
+        target_dir = OUT_DIR / "reuse"
+        _shutil.rmtree(target_dir, ignore_errors=True)
+        self.win.screen_check.setChecked(True)
+        self.win.on_screen_toggle()
+        self.win.output_edit.setText(str(target_dir))
+        self.win.folder_combo.setCurrentIndex(0)      # 按应用复用
+        self.win.interval_spin.setValue(0.3)
+        self.win.count_spin.setValue(1)
+
+        for _ in range(2):
+            self.win.on_start()
+            deadline = time.monotonic() + 30
+            while self.win.engine.running and time.monotonic() < deadline:
+                self.pump(0.05)
+            self.pump(0.3)
+
+        folders = [p for p in target_dir.iterdir() if p.is_dir()]
+        self.assertEqual(len(folders), 1, f"应当只有一个文件夹，实际：{[p.name for p in folders]}")
+        shots = sorted(folders[0].glob("*.png"))
+        self.assertEqual(len(shots), 2, [p.name for p in shots])
+        manifest = folders[0] / "capture_manifest.csv"
+        rows = [r for r in manifest.read_text(encoding="utf-8-sig").splitlines() if r.strip()]
+        self.assertEqual(len(rows), 3, "两次任务的记录应当追加在同一个清单里")
+        print(f"  [info] 两次任务复用同一文件夹：{folders[0].name}，共 {len(shots)} 张，清单 {len(rows) - 1} 条")
+
+    def test_options_apply_live(self):
+        """运行中改参数（间隔 / 数量上限）必须立即生效，不需要停止任务。"""
+        import shutil as _shutil
+
+        target_dir = OUT_DIR / "live"
+        _shutil.rmtree(target_dir, ignore_errors=True)
+        self.win.screen_check.setChecked(True)
+        self.win.on_screen_toggle()
+        self.win.output_edit.setText(str(target_dir))
+        self.win.folder_combo.setCurrentIndex(2)      # 不用子目录
+        self.win.interval_spin.setValue(5.0)          # 先用 5 秒
+        self.win.count_spin.setValue(3)
+        self.win.on_start()
+        self.pump(1.0)
+        self.assertGreaterEqual(self.win.counts["saved"], 1, "第一张没有截到")
+
+        # 运行中把间隔改成 0.3 秒
+        self.win.interval_spin.setValue(0.3)
+        self.win.apply_live_config()
+        self.assertEqual(self.win.engine.config.interval, 0.3, "间隔没有传给运行中的任务")
+        started = time.monotonic()
+        while self.win.counts["saved"] < 2 and time.monotonic() - started < 3:
+            self.pump(0.05)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 2.5, f"改了间隔后没有立即按新间隔截图（等了 {elapsed:.1f}s）")
+
+        # 运行中把上限改成 2：满足后应立即结束
+        self.win.count_spin.setValue(2)
+        self.win.apply_live_config()
+        deadline = time.monotonic() + 20
+        while self.win.engine.running and time.monotonic() < deadline:
+            self.pump(0.05)
+        self.assertFalse(self.win.engine.running, "改了上限后任务没有立即结束")
+        self.assertEqual(self.win.counts["saved"], 2, f"上限没有即时生效：{self.win.counts}")
+        print(f"  [info] 运行中改间隔/上限即时生效：新间隔后 {elapsed:.2f}s 出下一张，共 {self.win.counts['saved']} 张")
+
     def test_new_options_and_arrow(self):
         """更多选项要齐全，下拉框要有箭头图片。"""
         from screen_capture.gui_qt import _ARROW, _ARROW_RULE
 
-        for name in ("skip_check", "subdir_check", "manifest_check", "client_check",
+        for name in ("skip_check", "manifest_check", "client_check",
                      "cursor_check", "activate_check", "archive_check",
                      "archive_delete_check", "tray_check"):
             self.assertTrue(hasattr(self.win, name), f"缺少选项：{name}")
@@ -173,7 +238,7 @@ class QtUiTests(unittest.TestCase):
         self.win.output_edit.setText(str(OUT_DIR / "flow"))
         self.win.interval_spin.setValue(0.5)
         self.win.count_spin.setValue(2)
-        self.win.subdir_check.setChecked(False)
+        self.win.folder_combo.setCurrentIndex(2)   # 不用子目录
         self.win.on_start()
 
         self.assertIsNotNone(self.win.engine)

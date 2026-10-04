@@ -29,6 +29,11 @@ logger = applog.get_logger()
 TARGET_WINDOW = "window"
 TARGET_SCREEN = "screen"
 
+# 子目录方式
+FOLDER_APP = "app"          # 按应用分文件夹，同一个应用复用同一个文件夹（默认）
+FOLDER_SESSION = "session"  # 每次开始新建带时间戳的文件夹
+FOLDER_FLAT = "flat"        # 直接放在输出目录里，不再分子文件夹
+
 MAX_CONSECUTIVE_FAILURES = 3
 MAX_WGC_FAILURES = 3          # WGC 连续抓帧失败多少次就重建会话
 _VALID_EXT = {"png", "jpg", "jpeg", "bmp", "webp"}
@@ -69,7 +74,7 @@ class CaptureConfig:
     max_duration: float = 0.0        # 最长运行时长（秒），0 = 不限
     method: str = w.METHOD_AUTO      # auto / wgc / printwindow / screen
     skip_unchanged: bool = False     # 画面与上一张相同则不保存
-    session_subdir: bool = True      # 在输出目录下按会话建子目录
+    folder_mode: str = FOLDER_APP    # app（按应用复用）/ session（每次新建）/ flat（不建）
     image_format: str = "png"
     jpeg_quality: int = 90
     filename_pattern: str = "{app}_{date}_{time}_{index:04d}"
@@ -95,6 +100,8 @@ class CaptureConfig:
             raise ConfigError("最长运行时长不能为负数")
         if self.method not in (w.METHOD_AUTO, w.METHOD_WGC, w.METHOD_PRINTWINDOW, w.METHOD_SCREEN):
             raise ConfigError(f"未知的截图方式：{self.method}")
+        if self.folder_mode not in (FOLDER_APP, FOLDER_SESSION, FOLDER_FLAT):
+            raise ConfigError(f"未知的子目录方式：{self.folder_mode}")
         fmt = self.image_format.lower().lstrip(".")
         if fmt not in _VALID_EXT:
             raise ConfigError(f"不支持的图片格式：{self.image_format}")
@@ -225,6 +232,15 @@ class CaptureEngine:
         self._session = None          # WGC 常驻会话
         self._session_key: tuple = ()
         self._backend = ""
+        # —— 运行中热更新 ——
+        self._config_lock = threading.Lock()
+        self._need_session_reinit = False    # 方式/客户区/光标变了 → 重建 WGC 会话
+        self._need_dir_reinit = False        # 输出目录/子目录方式变了 → 换目录
+        self._need_timing_reinit = False     # 间隔变了 → 从当前时刻重新计时
+        self._directory: Optional[Path] = None
+        self._manifest_path: Optional[Path] = None
+        self._manifest_file = None
+        self._manifest_writer = None
 
     # -- 生命周期 ---------------------------------------------------------
     @property
@@ -249,6 +265,34 @@ class CaptureEngine:
     def join(self, timeout: Optional[float] = None) -> None:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+
+    # -- 运行中改参数：下一个循环就生效，不用停止任务 --
+    _SESSION_KEYS = ("method", "client_only", "capture_cursor")
+    _DIR_KEYS = ("output_dir", "folder_mode")
+
+    def apply_config(self, **changes) -> List[str]:
+        """即时修改正在运行的任务参数（间隔、方式、张数、目录…）。
+
+        返回真正发生变化的字段名；界面用它提示"已即时生效"。
+        涉及 WGC 会话 / 输出目录的改动会打标记，由截图线程在下一轮安全地重建
+        （不能在这里直接动会话：WGC 对象是 COM 单元线程绑定的）。
+        """
+        applied: List[str] = []
+        with self._config_lock:
+            for key, value in changes.items():
+                if not hasattr(self.config, key):
+                    continue
+                if getattr(self.config, key) == value:
+                    continue
+                setattr(self.config, key, value)
+                applied.append(key)
+            if any(key in applied for key in self._SESSION_KEYS):
+                self._need_session_reinit = True
+            if any(key in applied for key in self._DIR_KEYS):
+                self._need_dir_reinit = True
+            if "interval" in applied or "start_delay" in applied:
+                self._need_timing_reinit = True
+        return applied
 
     # -- WGC 会话 ---------------------------------------------------------
     def _open_session(self) -> None:
@@ -329,6 +373,74 @@ class CaptureEngine:
             except Exception:  # pragma: no cover
                 pass
 
+    # -- 输出目录 / 清单 ---------------------------------------------------
+    def _app_folder_name(self) -> str:
+        target = self._target
+        label = ""
+        if target is not None:
+            label = target.app_label or (
+                "screen" if target.kind == TARGET_SCREEN else target.title
+            )
+        return sanitize_filename_part(label or "capture", 60)
+
+    def _resolve_directory(self) -> Path:
+        """按子目录方式算出这次的保存目录。"""
+        base = Path(self.config.output_dir).expanduser()
+        app = self._app_folder_name()
+        if self.config.folder_mode == FOLDER_SESSION:
+            return base / f"{sanitize_filename_part(app, 40)}_{datetime.now():%Y%m%d_%H%M%S}"
+        if self.config.folder_mode == FOLDER_APP:
+            # 同一个应用始终用同一个文件夹（已存在就直接用，不再新建）
+            return base / app
+        return base
+
+    def _open_manifest(self) -> None:
+        self._close_manifest()
+        if not self.config.write_manifest or self._directory is None:
+            return
+        self._manifest_path = self._directory / "capture_manifest.csv"
+        try:
+            self._manifest_file = open(self._manifest_path, "a", newline="", encoding="utf-8-sig")
+            self._manifest_writer = csv.writer(self._manifest_file)
+            if self._manifest_file.tell() == 0:
+                self._manifest_writer.writerow(
+                    ["序号", "时间", "文件名", "宽", "高", "截图方式", "是否保存", "备注"]
+                )
+                self._manifest_file.flush()
+        except Exception as exc:  # pragma: no cover
+            logger.warning("无法写入清单：%s", exc)
+            self._manifest_file = None
+            self._manifest_writer = None
+
+    def _close_manifest(self) -> None:
+        if self._manifest_file is not None:
+            try:
+                self._manifest_file.flush()
+                self._manifest_file.close()
+            except Exception:  # pragma: no cover
+                pass
+        self._manifest_file = None
+        self._manifest_writer = None
+
+    def _switch_directory(self) -> None:
+        """输出目录或子目录方式变了：安全地换到新目录。"""
+        old = self._directory
+        self._directory = self._resolve_directory()
+        if old == self._directory:
+            return
+        self._close_manifest()
+        self._directory.mkdir(parents=True, exist_ok=True)
+        self._open_manifest()
+        logger.info("保存目录已即时切换：%s", self._directory)
+        self._emit({"type": "info", "message": f"保存目录已切换到：{self._directory}"})
+
+    def _reopen_manifest_if_needed(self) -> None:
+        """清单开关被改动的处理。"""
+        if self.config.write_manifest and self._manifest_writer is None:
+            self._open_manifest()
+        elif not self.config.write_manifest and self._manifest_file is not None:
+            self._close_manifest()
+
     # -- 内部实现 ---------------------------------------------------------
     def _emit(self, event: Dict) -> None:
         self._log_event(event)
@@ -370,9 +482,11 @@ class CaptureEngine:
             pass
 
     def _sleep(self, seconds: float) -> None:
-        """可被 stop() 立刻打断的等待。"""
+        """可被 stop() 或「参数变更」立刻打断的等待。"""
         deadline = time.monotonic() + max(0.0, seconds)
         while not self._stop_event.is_set():
+            if self._need_timing_reinit:
+                return          # 间隔被改了，马上回去重新计时
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
@@ -443,24 +557,9 @@ class CaptureEngine:
         reason = "已停止"
         try:
             self._target = resolve_target(cfg.target)
-            directory = Path(cfg.output_dir).expanduser()
-            if cfg.session_subdir:
-                app = self._target.app_label or (
-                    "screen" if self._target.kind == TARGET_SCREEN else "window"
-                )
-                directory = directory / f"{sanitize_filename_part(app, 40)}_{datetime.now():%Y%m%d_%H%M%S}"
-            directory.mkdir(parents=True, exist_ok=True)
-            manifest_path = directory / "capture_manifest.csv"
-            manifest_file = None
-            manifest_writer = None
-            if cfg.write_manifest:
-                manifest_file = open(manifest_path, "a", newline="", encoding="utf-8-sig")
-                manifest_writer = csv.writer(manifest_file)
-                if manifest_file.tell() == 0:
-                    manifest_writer.writerow(
-                        ["序号", "时间", "文件名", "宽", "高", "截图方式", "是否保存", "备注"]
-                    )
-                    manifest_file.flush()
+            self._directory = self._resolve_directory()
+            self._directory.mkdir(parents=True, exist_ok=True)
+            self._open_manifest()
         except Exception as exc:
             self._emit({"type": "error", "message": f"启动失败：{exc}", "fatal": True})
             self._emit({"type": "finished", "reason": "启动失败", **stats})
@@ -488,14 +587,11 @@ class CaptureEngine:
         self._emit({
             "type": "started",
             "target": self._target.describe(),
-            "output_dir": str(directory),
+            "output_dir": str(self._directory),
             "interval": cfg.interval,
             "method": cfg.method,
         })
 
-        app_name = self._target.app_label or (
-            "screen" if self._target.kind == TARGET_SCREEN else self._target.title
-        )
         started_at = time.monotonic()
         next_deadline = time.monotonic() + cfg.start_delay
         index = 0
@@ -506,6 +602,19 @@ class CaptureEngine:
                 self._sleep(cfg.start_delay)
 
             while not self._stop_event.is_set():
+                # —— 运行中被改了参数：在这里安全地应用（不打断任务）——
+                if self._need_dir_reinit:
+                    self._need_dir_reinit = False
+                    self._switch_directory()
+                if self._need_session_reinit:
+                    self._need_session_reinit = False
+                    self._recreate_session("参数变更")
+                if self._need_timing_reinit:
+                    # 间隔/延迟刚被改过：立刻按新间隔重新计时（下一张马上开始）
+                    self._need_timing_reinit = False
+                    next_deadline = time.monotonic()
+                self._reopen_manifest_if_needed()
+
                 if cfg.max_shots and stats["saved"] >= cfg.max_shots:
                     reason = f"已达到设定的截图数量（{cfg.max_shots} 张）"
                     break
@@ -539,19 +648,20 @@ class CaptureEngine:
                     took_ms = int((time.monotonic() - started) * 1000)
                     if unchanged:
                         stats["skipped"] += 1
-                        if manifest_writer:
-                            manifest_writer.writerow([
+                        if self._manifest_writer:
+                            self._manifest_writer.writerow([
                                 index, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "", image.width, image.height, used_method, 0, "画面无变化，已跳过",
                             ])
-                            manifest_file.flush()
+                            self._manifest_file.flush()
                         self._emit({
                             "type": "skip", "index": index, "reason": "画面无变化",
                             "total_skipped": stats["skipped"], "took_ms": took_ms,
                         })
                     else:
                         try:
-                            path = self._save(image, stats["saved"] + 1, directory, app_name)
+                            path = self._save(image, stats["saved"] + 1, self._directory,
+                                              self._app_folder_name())
                         except Exception as exc:
                             stats["failures"] += 1
                             self._emit({"type": "error", "message": f"保存图片失败：{exc}",
@@ -563,12 +673,12 @@ class CaptureEngine:
                             self._last_digest = digest
                             stats["saved"] += 1
                             size = path.stat().st_size
-                            if manifest_writer:
-                                manifest_writer.writerow([
+                            if self._manifest_writer:
+                                self._manifest_writer.writerow([
                                     index, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                     path.name, image.width, image.height, used_method, 1, "",
                                 ])
-                                manifest_file.flush()
+                                self._manifest_file.flush()
                             self._emit({
                                 "type": "shot",
                                 "index": index,
@@ -584,24 +694,19 @@ class CaptureEngine:
                                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             })
 
-                next_deadline += cfg.interval
                 now = time.monotonic()
+                next_deadline += cfg.interval
                 if next_deadline <= now:
                     next_deadline = now  # 单张耗时超过间隔时不再追赶，避免连拍
                 self._emit({"type": "waiting", "next_at": next_deadline, "interval": cfg.interval})
                 self._sleep(next_deadline - now)
         finally:
             self._close_session()
-            if manifest_writer is not None and manifest_file is not None:
-                try:
-                    manifest_file.flush()
-                    manifest_file.close()
-                except Exception:  # pragma: no cover
-                    pass
+            self._close_manifest()
             self._emit({
                 "type": "finished",
                 "reason": reason,
-                "output_dir": str(directory),
-                "manifest": str(manifest_path) if cfg.write_manifest else "",
+                "output_dir": str(self._directory),
+                "manifest": str(self._manifest_path) if cfg.write_manifest and self._manifest_path else "",
                 **stats,
             })

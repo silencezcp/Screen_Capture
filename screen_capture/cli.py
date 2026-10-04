@@ -92,7 +92,7 @@ def run_capture(args) -> int:
         max_duration=args.duration,
         method=args.method,
         skip_unchanged=args.skip_unchanged,
-        session_subdir=not args.no_subdir,
+        folder_mode="flat" if args.no_subdir else args.folder_mode,
         image_format=args.format,
         jpeg_quality=args.quality,
         filename_pattern=args.pattern,
@@ -220,7 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quality", type=int, default=90, help="JPG/WEBP 质量，默认 90")
     parser.add_argument("--pattern", default="{app}_{date}_{time}_{index:04d}",
                         help="文件名模板，可用 {app} {date} {time} {datetime} {index} {hwnd}")
-    parser.add_argument("--no-subdir", action="store_true", help="不按会话创建子目录")
+    parser.add_argument("--no-subdir", action="store_true", help="不建子目录，截图直接放在 --out 目录里")
+    parser.add_argument("--folder-mode", default="app", choices=["app", "session", "flat"],
+                        help="子目录方式：app=按应用复用同一文件夹（默认）/ session=每次新建时间戳文件夹 / flat=不建")
     parser.add_argument("--skip-unchanged", action="store_true", help="画面与上一张相同则不保存")
     parser.add_argument("--no-manifest", action="store_true", help="不写 capture_manifest.csv")
     parser.add_argument("--quiet", action="store_true", help="只输出必要的保存信息")

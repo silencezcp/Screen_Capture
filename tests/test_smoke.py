@@ -271,7 +271,7 @@ class EngineTests(unittest.TestCase):
             interval=0.4,
             max_shots=3,
             method=w.METHOD_SCREEN,
-            session_subdir=False,
+            folder_mode="flat",
         )
         engine = CaptureEngine(config, events.append)
         started = time.monotonic()

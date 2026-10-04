@@ -92,7 +92,7 @@ class GuiFlowTests(unittest.TestCase):
         self.app.interval_var.set("0.5")
         self.app.count_var.set("2")
         self.app.method_var.set("自动（优先 PrintWindow，失败自动回退）")
-        self.app.session_subdir_var.set(False)
+        self.app.session_subdir_var.set(False)   # session_subdir 关掉 = flat
         self.app.format_var.set("png")
 
         self.app._on_start()
