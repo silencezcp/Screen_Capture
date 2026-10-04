@@ -355,6 +355,50 @@ class SettingsLocationTests(unittest.TestCase):
         print("  [info] 设置写入 ini 文件（不碰注册表）")
 
 
+class QualityTests(unittest.TestCase):
+    """图片质量参数必须真的生效（只对 JPG / WEBP 这类有损格式）。"""
+
+    @staticmethod
+    def _engine(output_dir: Path, image_format: str, quality: int) -> CaptureEngine:
+        config = CaptureConfig(
+            target=Target(kind=TARGET_WINDOW), output_dir=str(output_dir),
+            image_format=image_format, jpeg_quality=quality, folder_mode="flat",
+        )
+        engine = CaptureEngine(config, lambda _event: None)
+        engine._target = Target(kind=TARGET_WINDOW, hwnd=1, title="t", app_label="a")
+        return engine
+
+    def test_jpeg_quality_affects_file_size(self):
+        import random
+
+        out = OUT_DIR / "quality"
+        out.mkdir(parents=True, exist_ok=True)
+        image = Image.new("RGB", (600, 400), "white")
+        pixels = image.load()
+        for x in range(0, 600, 3):          # 加点噪点，否则纯色压缩后体积差不多
+            for y in range(0, 400, 3):
+                pixels[x, y] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+        sizes = {}
+        for quality in (10, 95):
+            engine = self._engine(out, "jpg", quality)
+            sizes[quality] = engine._save(image, 1, out, "app").stat().st_size
+        self.assertLess(sizes[10], sizes[95] * 0.6,
+                        f"质量 10 的文件应明显小于质量 95：{sizes}")
+        print(f"  [info] JPG 质量生效：q10={sizes[10] / 1024:.1f} KB  q95={sizes[95] / 1024:.1f} KB")
+
+    def test_png_ignores_quality_by_design(self):
+        """PNG 是无损格式：质量不影响体积（界面上会禁用该输入框并提示原因）。"""
+        out = OUT_DIR / "quality"
+        out.mkdir(parents=True, exist_ok=True)
+        image = Image.new("RGB", (400, 300), (200, 120, 60))
+        sizes = set()
+        for quality in (10, 100):
+            engine = self._engine(out, "png", quality)
+            sizes.add(engine._save(image, 1, out, "a").stat().st_size)
+        self.assertEqual(len(sizes), 1, f"PNG 体积不应随质量变化：{sizes}")
+
+
 class BatchFileTests(unittest.TestCase):
     """批处理的格式约束（踩过坑，必须守住）。
 

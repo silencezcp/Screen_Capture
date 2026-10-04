@@ -186,6 +186,7 @@ QComboBox::drop-down {{
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ width: 18px; background: transparent; border: none; }}
 QFrame#SubCard {{ background: {SURFACE_ALT}; border: 1px solid {BORDER}; border-radius: 11px; }}
 QLabel#SubTitle {{ font-weight: 600; color: {TEXT_SUB}; }}
+QLabel#Hint {{ color: {TEXT_SUB}; }}
 QFrame#Banner {{ background: {WARN_BG}; border: 1px solid {WARN_BORDER}; border-radius: 11px; }}
 QLabel#BannerText {{ color: {WARN_TEXT}; font-weight: 600; }}
 QPushButton#BannerFix {{ background: {PRIMARY}; color: #FFFFFF; border: none; border-radius: 9px; padding: 7px 14px; font-weight: 600; }}
@@ -626,8 +627,14 @@ class MainWindow(QMainWindow):
         self.quality_spin.setRange(1, 100)
         self.quality_spin.setValue(90)
         self.quality_spin.setFixedWidth(74)
+        self.quality_spin.setToolTip(
+            "只对 JPG / WEBP 有效：数值越小文件越小、画质越差。\n"
+            "PNG / BMP 是无损格式，质量参数不适用（所以会自动禁用）。")
+        self.quality_hint = QLabel("", objectName="Hint")
+        self.format_combo.currentIndexChanged.connect(lambda _i: self.on_format_changed())
         format_row.addWidget(self.format_combo)
         format_row.addWidget(self.quality_spin)
+        format_row.addWidget(self.quality_hint)
         format_row.addStretch(1)
         grid.addLayout(format_row, row, 1)
         row += 1
@@ -1021,6 +1028,15 @@ class MainWindow(QMainWindow):
         if method == w.METHOD_AUTO and not _wgc_available():
             self.append_log("提示：当前环境没有可用的 WGC，自动方式会退回 GDI 截图。")
 
+    def on_format_changed(self) -> None:
+        """PNG / BMP 是无损格式，质量参数无效——直接禁用并提示，免得白改。"""
+        fmt = self.format_combo.currentText().strip().lower()
+        usable = fmt in ("jpg", "jpeg", "webp")
+        self.quality_spin.setEnabled(usable)
+        self.quality_hint.setText("" if usable else "无损格式，质量参数不适用（选 JPG / WEBP 才生效）")
+        if hasattr(self, "live_timer"):
+            self.live_timer.start(150)
+
     def current_folder_mode(self) -> str:
         index = max(0, self.folder_combo.currentIndex())
         return FOLDER_CHOICES[index][1]
@@ -1288,6 +1304,7 @@ class MainWindow(QMainWindow):
         if fmt in FORMAT_CHOICES:
             self.format_combo.setCurrentText(fmt)
         self.quality_spin.setValue(int(s.value("quality", 90)))
+        self.on_format_changed()
         self.pattern_edit.setText(str(s.value("pattern", "{app}_{date}_{time}_{index:04d}")))
         try:
             stored_version = int(s.value("settings_version", 0))

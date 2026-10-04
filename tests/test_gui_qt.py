@@ -187,6 +187,19 @@ class QtUiTests(unittest.TestCase):
         print(f"  [info] 运行中改间隔/上限即时生效：新间隔后 {elapsed:.2f}s 出下一张，"
               f"上限改小后立刻收尾（共 {final} 张）")
 
+    def test_quality_only_for_lossy_formats(self):
+        """质量只对 JPG/WEBP 有效：PNG/BMP 应禁用输入框并给出提示。"""
+        for fmt, usable in (("png", False), ("bmp", False), ("jpg", True), ("webp", True)):
+            self.win.format_combo.setCurrentText(fmt)
+            self.win.on_format_changed()
+            self.assertEqual(self.win.quality_spin.isEnabled(), usable,
+                             f"格式 {fmt} 的质量框可编辑状态不对")
+            if usable:
+                self.assertEqual(self.win.quality_hint.text(), "")
+            else:
+                self.assertIn("无损", self.win.quality_hint.text())
+        print("  [info] 质量参数仅对 JPG/WEBP 生效，PNG/BMP 自动禁用并提示")
+
     def test_new_options_and_arrow(self):
         """更多选项要齐全，下拉框要有箭头图片。"""
         from screen_capture.gui_qt import _ARROW, _ARROW_RULE

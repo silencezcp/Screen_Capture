@@ -17,7 +17,7 @@
 
 | 平台 | 下载 |
 | --- | --- |
-| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.7/ScreenCaptureTool_v1.0.7_portable_win64.zip) |
+| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.8/ScreenCaptureTool_v1.0.8_portable_win64.zip) |
 | GitHub（归档） | [⬇ ScreenCaptureTool_v1.0.4_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
 
 代码仓库同步在 [Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
@@ -239,8 +239,13 @@ python run.py --selftest                      :: 环境自检（含 WGC / PyQt5�
 | `--client-only` / `--cursor` / `--no-activate` | 只截客户区 / 含光标 / 不抢焦点 |
 | `--out 目录` | 保存目录，默认 `程序目录\ScreenCapture` |
 | `--format` `--quality` `--pattern` | 格式 / 质量 / 文件名模板 |
+
+> **质量参数只对 `jpg` / `webp` 有效**。`png` / `bmp` 是无损格式，改质量不会有任何变化 ——
+> 界面上选到这两种格式时，质量输入框会**自动禁用并提示原因**（避免白改一通）。
+> 想让截图更省空间：格式选 `jpg`（质量 85~90 通常够用）或 `webp`。同一张 900×600 的图实测：
+> `jpg` 质量 10 ≈ 28 KB、质量 90 ≈ 128 KB、质量 100 ≈ 378 KB；`png` ≈ 276 KB；`bmp` ≈ 1.6 MB。
 | `--no-subdir` `--skip-unchanged` `--no-manifest` `--quiet` | 各类开关 |
-| `--folder-mode app\|session\|flat` | 子目录方式，默认 `app`（按应用复用同一文件夹） |
+| `--folder-mode app\|session\|flat` | 子目录方式，默认 `app`（按窗口标题分文件夹） |
 | `--archive-now [目录]` | 立刻把「早于今天」的截图压缩成 `_archive\YYYY-MM-DD.zip`（默认删除原图） |
 | `--archive-keep` | 配合 `--archive-now`：归档时保留原图 |
 | `--ui qt\|tk` | 界面实现 |
