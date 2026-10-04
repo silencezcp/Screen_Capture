@@ -247,20 +247,26 @@ def grant_all_users_read(directory: Path) -> None:
     只读很关键：程序目录不可写时，程序会自动把日志与默认截图目录放到
     每个用户自己的 %LOCALAPPDATA%，多人同时用互不干扰。
     """
-    # S-1-5-18=SYSTEM  S-1-5-32-544=Administrators  S-1-5-32-545=Users
-    result = subprocess.run(
-        ["icacls", str(directory), "/inheritance:r",
-         "/grant", "*S-1-5-18:(OI)(CI)F",
-         "/grant", "*S-1-5-32-544:(OI)(CI)F",
-         "/grant", "*S-1-5-32-545:(OI)(CI)RX",
-         "/T", "/C"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    output = ((result.stdout or "") + (result.stderr or "")).strip()
-    if result.returncode != 0:
-        log(f"  设置权限失败：{output[:200]}")
-    else:
-        log("  已设置权限：所有用户可读+执行，管理员可写")
+    # 注意：**不要**用 /inheritance:r！
+    # 实测那样只会把目录授权给 Users，文件（exe/DLL）上没落地，
+    # 结果普通用户双击报「Windows 无法访问指定设备、路径或文件」。
+    # 正确做法：先把 ACL 重置为继承 ProgramData 的系统默认值，再显式补一条
+    # 「所有用户 读取+执行」，目录和文件会一起生效。
+    for args in (
+        ["icacls", str(directory), "/reset", "/T", "/C"],
+        ["icacls", str(directory), "/grant", "*S-1-5-32-545:(OI)(CI)RX", "/T", "/C"],
+    ):
+        result = subprocess.run(args, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+        if result.returncode != 0:
+            log(f"  设置权限失败：{((result.stdout or '') + (result.stderr or '')).strip()[:200]}")
+            return
+    # 复核：拿一个文件看看 Users 是否真的能读
+    probe = next((p for p in directory.rglob("*.exe")), None)
+    check = subprocess.run(["icacls", str(probe or directory)], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")
+    ok = "Users" in (check.stdout or "") or "S-1-5-32-545" in (check.stdout or "")
+    log(f"  已设置权限：所有用户可读+执行，管理员可写{'' if ok else '（未能确认，请抽查）'}")
 
 
 def deploy(targets, all_users: bool = False) -> int:
