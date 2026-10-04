@@ -13,17 +13,25 @@
 
 ## 下载（免安装便携版）
 
-不想折腾 Python 环境就直接下这个：
+不想折腾 Python 环境就直接下这个 —— **同一份文件，两边都能下，内容一致**（Gitee 在国内更快）：
 
-**[⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip)**
-（约 65 MB）—— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
+| 平台 | 下载 |
+| --- | --- |
+| **Gitee（国内推荐）** | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip) |
+| GitHub | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip) |
+
+约 65 MB —— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
 `应用窗口定时截图工具\应用窗口定时截图工具.exe` 即可使用，免安装、免配置。
 
 > * 别只把 exe 单独拷出来，它需要同级的 `_internal` 文件夹；
 > * 程序未签名，首次运行可能弹 SmartScreen，点「更多信息」→「仍要运行」；
 > * 解压目录若带「低完整性标签」（沙箱 / 受限工作区），进程会被降级为低权限、WGC 会被系统拒绝，
 >   放到桌面这类普通目录即可；自检里的「运行权限」会显示当前级别（`Medium` 正常）。
-> * 全部版本见 [Releases](https://github.com/silencezcp/Screen_Capture/releases)。
+> * 全部版本：[Gitee Releases](https://gitee.com/silence95/Screen_Capture/releases) ｜
+>   [GitHub Releases](https://github.com/silencezcp/Screen_Capture/releases)。
+
+> **本仓库双端同步**：主仓库在 GitHub，Gitee 是镜像，内容（含标签与发行版附件）保持一致。
+> 建议国内用户在 Gitee 侧浏览与下载。
 
 ## 1. 运行环境
 
