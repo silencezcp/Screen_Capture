@@ -30,8 +30,8 @@ ASSETS = ROOT / "assets"
 # （dist 里的程序正在运行时文件会被占用，这时就用它换个目录打包）
 DIST = Path(os.environ.get("SCREEN_CAPTURE_DIST") or (ROOT / "dist"))
 BUILD = ROOT / "build"
-VERSION = (1, 0, 4, 0)
-VERSION_TEXT = "1.0.4.0"
+VERSION = (1, 0, 6, 0)
+VERSION_TEXT = "1.0.6.0"
 
 GUI_NAME = "应用窗口定时截图工具"
 CLI_NAME = "应用窗口定时截图工具-命令行"
@@ -196,20 +196,24 @@ def integrity_label(path: Path) -> str:
     return ""
 
 
-def create_shortcut(target: Path, name: str = "应用窗口定时截图工具") -> Optional[Path]:
+def create_shortcut(target: Path, name: str = "应用窗口定时截图工具",
+                    desktop: str = "user") -> Optional[Path]:
     """在桌面创建快捷方式。
 
     做法是「先写一个 UTF-8 的 .ps1，再执行它」，避免把中文直接塞进命令行
     （cmd → PowerShell 的编码很容易把中文变成乱码，最后静默失败）。
+    desktop="public" 时建到「公用桌面」，本机所有用户都能看到。
     """
     if not target.exists():
         log(f"  跳过快捷方式：找不到 {target}")
         return None
     script = BUILD / "make_shortcut.ps1"
     script.parent.mkdir(parents=True, exist_ok=True)
+    desktop_expr = ("[Environment]::GetFolderPath('CommonDesktopDirectory')"
+                    if desktop == "public" else "[Environment]::GetFolderPath('Desktop')")
     script.write_text(
         "$ErrorActionPreference = 'Stop'\n"
-        "$desktop = [Environment]::GetFolderPath('Desktop')\n"
+        f"$desktop = {desktop_expr}\n"
         f"$link = Join-Path $desktop '{name}.lnk'\n"
         "$shell = New-Object -ComObject WScript.Shell\n"
         "$sc = $shell.CreateShortcut($link)\n"
@@ -237,14 +241,43 @@ def create_shortcut(target: Path, name: str = "应用窗口定时截图工具") 
     return link
 
 
-def deploy(targets) -> int:
-    """把成品复制到普通目录（默认 %LOCALAPPDATA%\\ScreenCaptureTool）。
+def grant_all_users_read(directory: Path) -> None:
+    """给「所有用户」只读+执行权限（多人共用时使用）。
+
+    只读很关键：程序目录不可写时，程序会自动把日志与默认截图目录放到
+    每个用户自己的 %LOCALAPPDATA%，多人同时用互不干扰。
+    """
+    # S-1-5-18=SYSTEM  S-1-5-32-544=Administrators  S-1-5-32-545=Users
+    result = subprocess.run(
+        ["icacls", str(directory), "/inheritance:r",
+         "/grant", "*S-1-5-18:(OI)(CI)F",
+         "/grant", "*S-1-5-32-544:(OI)(CI)F",
+         "/grant", "*S-1-5-32-545:(OI)(CI)RX",
+         "/T", "/C"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    if result.returncode != 0:
+        log(f"  设置权限失败：{output[:200]}")
+    else:
+        log("  已设置权限：所有用户可读+执行，管理员可写")
+
+
+def deploy(targets, all_users: bool = False) -> int:
+    """把成品复制到普通目录。
+
+    默认装到当前用户的 %LOCALAPPDATA%\\ScreenCaptureTool；
+    all_users=True 时装到 %PROGRAMDATA%\\ScreenCaptureTool 并授权所有用户只读，
+    再在「公用桌面」建快捷方式 —— 服务器上多人共用一份程序。
 
     受限环境（例如 DSH 工作区）里目录带了 Low 完整性标签，从中写出的 exe 会继承 Low；
     进程以低完整性启动后，WGC 抓窗口会被系统拒绝（0x80070005）。
     复制到普通目录后新文件继承 Medium 标签，WGC 就正常了。
     """
-    destination = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ScreenCaptureTool"
+    if all_users:
+        destination = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData") / "ScreenCaptureTool"
+    else:
+        destination = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ScreenCaptureTool"
     destination.mkdir(parents=True, exist_ok=True)
     log(f"\n=== 部署到 {destination} ===")
     for path in targets:
@@ -258,16 +291,33 @@ def deploy(targets) -> int:
         else:
             name = "app"
         dest = destination / name
-        shutil.rmtree(dest, ignore_errors=True)
+        removed = True
+        if dest.exists():
+            shutil.rmtree(dest, ignore_errors=True)
+            # rmtree 可能因文件被占用而静默失败（杀软/索引器拿着句柄），
+            # 所以必须再确认一次，并允许覆盖式复制，别让部署半途抛 FileExistsError。
+            removed = not dest.exists()
         if path.is_dir():
-            shutil.copytree(path, dest)
+            try:
+                shutil.copytree(path, dest, dirs_exist_ok=True)
+            except OSError as exc:
+                log(f"  复制失败：{exc}")
+                log("  提示：目标目录可能被正在运行的程序占用，请先关掉它再重新部署。")
+                return 1
             log(f"  已复制目录：{dest}   {human_size(dest)}")
+            if not removed:
+                log("    提示：旧目录未能完全删除，已直接覆盖（残留旧文件不影响使用）")
             label = integrity_label(dest)
         else:
             dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, dest / path.name)
             log(f"  已复制文件：{dest / path.name}   {human_size(path)}")
             label = integrity_label(dest / path.name)
+        if all_users:
+            # 多人共用：留下标记 + 授权所有用户只读执行
+            (dest / "multi_user.txt").write_text(
+                "多人共用安装：日志与默认截图目录按用户分开存放。\n", encoding="utf-8")
+            grant_all_users_read(dest)
         log(f"    完整性标签：{label or '无显式标签（默认 Medium，WGC 可用）'}")
     app_dir = destination / "app"
     exe_candidates = list(app_dir.glob("*.exe")) if app_dir.is_dir() else []
@@ -276,7 +326,7 @@ def deploy(targets) -> int:
             exe_candidates.append(path)
     if exe_candidates:
         log("")
-        create_shortcut(exe_candidates[0])
+        create_shortcut(exe_candidates[0], desktop="public" if all_users else "user")
     log("以后运行部署目录里的 exe 即可（WGC 抓窗口需要 Medium 及以上权限）。")
     return 0
 
@@ -301,6 +351,8 @@ def main(argv=None) -> int:
     parser.add_argument("--keep-build", action="store_true", help="保留 build 中间目录")
     parser.add_argument("--deploy-only", action="store_true", help="不打包，只把 dist 里现有产物复制到普通目录")
     parser.add_argument("--no-deploy", action="store_true", help="打包后不自动部署")
+    parser.add_argument("--all-users", action="store_true",
+                        help="部署给本机所有用户（PROGRAMDATA + 公用桌面快捷方式，需管理员）")
     args = parser.parse_args(argv)
 
     if args.deploy_only:
@@ -308,7 +360,10 @@ def main(argv=None) -> int:
         if not targets:
             log("dist 目录里没有可部署的产物，请先运行 python build_exe.py")
             return 1
-        return deploy(targets)
+        code = deploy(targets, all_users=args.all_users)
+        if code:
+            log("\n部署失败。请关掉正在运行的本程序后重试：python build_exe.py --deploy-only")
+        return code
 
     if not ensure_pyinstaller():
         log("没有找到 PyInstaller，请先安装：pip install pyinstaller")

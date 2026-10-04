@@ -61,13 +61,28 @@ WARN_BG = "#FFF4E3"
 WARN_BORDER = "#E9C88A"
 WARN_TEXT = "#8A5A12"
 
-IPC_NAME = "ScreenCaptureTool.SingleInstance"
+# 单实例的命名管道名：必须按「用户 + 会话」区分！
+# 服务器上多人同时用时，如果名字是全机器共享的，第二个用户启动程序会连上
+# 第一个用户的实例、以为自己已经开着而直接退出（窗口永远不出现）。
+def instance_name() -> str:
+    import getpass
+    import hashlib
+
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "user"
+    digest = hashlib.md5(user.encode("utf-8", "replace")).hexdigest()[:8]
+    return f"ScreenCaptureTool.{digest}.s{w.current_session_id()}"
 
 
 def notify_running_instance(timeout_ms: int = 400) -> bool:
-    """已有实例在跑就把它叫出来，返回 True（调用方应直接退出）。"""
+    """已有实例在跑就把它叫出来，返回 True（调用方应直接退出）。
+
+    只找「当前用户 + 当前会话」的实例：服务器上别人开着程序不影响你启动。
+    """
     socket = QLocalSocket()
-    socket.connectToServer(IPC_NAME)
+    socket.connectToServer(instance_name())
     if not socket.waitForConnected(timeout_ms):
         return False
     socket.write(b"SHOW")
@@ -819,9 +834,10 @@ class MainWindow(QMainWindow):
     # 单实例：重复启动时把已有窗口叫出来
     # ------------------------------------------------------------------
     def _start_single_instance(self) -> None:
-        QLocalServer.removeServer(IPC_NAME)      # 清掉上次异常退出留下的占位
+        name = instance_name()                   # 按「用户 + 会话」区分，多人共用互不影响
+        QLocalServer.removeServer(name)          # 清掉上次异常退出留下的占位
         server = QLocalServer(self)
-        if server.listen(IPC_NAME):
+        if server.listen(name):
             server.newConnection.connect(self._on_ipc_connection)
             self._server = server
         else:

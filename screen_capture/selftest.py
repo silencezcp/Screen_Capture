@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from . import capture_wgc as wgc
 from . import win32 as w
 
 
@@ -107,7 +108,25 @@ def run_selftest(output_dir: Optional[str] = None) -> int:
         image.save(path, "PNG")
         return f"{path}（{path.stat().st_size} 字节）"
 
+    def os_info() -> str:
+        version = sys.getwindowsversion()
+        build, server = version.build, getattr(version, "product_type", 1) == 3
+        if server and build == 14393:
+            name = f"Windows Server 2016（build {build}）"
+        elif server and build == 17763:
+            name = f"Windows Server 2019（build {build}）"
+        elif build >= 22000:
+            name = f"Windows 11（build {build}）"
+        elif build >= 10240:
+            name = f"Windows 10（build {build}）"
+        else:
+            name = f"Windows {version.major}.{version.minor}（build {build}）"
+        if wgc.os_build() and build < wgc.WGC_MIN_BUILD:
+            name += f" —— 不支持 WGC（需 build {wgc.WGC_MIN_BUILD}+），将自动使用 GDI 方式"
+        return name
+
     check("DPI 感知", lambda: w.enable_dpi_awareness())
+    check("系统版本", os_info)
     check("运行权限", lambda: f"完整性级别 {w.process_integrity()}"
                              + ("（偏低，WGC 可能被拒绝）" if w.process_integrity() == "Low" else ""))
     check("窗口枚举", lambda: f"找到 {len(w.enum_windows())} 个可见窗口")

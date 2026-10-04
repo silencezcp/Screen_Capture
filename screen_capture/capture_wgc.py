@@ -14,6 +14,7 @@ ok-script / ok-ww 这类游戏自动化框架一致：
 from __future__ import annotations
 
 import ctypes
+import sys
 import threading
 import time
 from typing import Optional
@@ -24,6 +25,19 @@ from . import win32 as w
 
 __all__ = ["WGC_AVAILABLE", "WgcError", "WgcSession", "available", "unavailable_reason"]
 
+# Windows.Graphics.Capture 从 Windows 10 1803（build 17134）开始提供：
+# Windows Server 2016 = 14393、Server 2012 R2 / Win8.1 更低，都没有这个 API。
+# 在这些系统上必须直接判定为不可用，否则会去激活不存在的 WinRT 类。
+WGC_MIN_BUILD = 17134
+
+
+def os_build() -> int:
+    try:
+        return int(sys.getwindowsversion().build)
+    except Exception:  # pragma: no cover - 非 Windows
+        return 0
+
+
 _IMPORT_ERROR: Optional[BaseException] = None
 try:  # pragma: no cover - 取决于运行环境是否装了 wgc_python
     from wgc_python import WindowCapture, get_last_error  # type: ignore
@@ -33,6 +47,10 @@ except BaseException as exc:  # pragma: no cover
     WindowCapture = None  # type: ignore
     WGC_AVAILABLE = False
     _IMPORT_ERROR = exc
+
+_OS_TOO_OLD = bool(WGC_AVAILABLE and 0 < os_build() < WGC_MIN_BUILD)
+if _OS_TOO_OLD:
+    WGC_AVAILABLE = False
 
 
 class WgcError(RuntimeError):
@@ -46,6 +64,10 @@ def available() -> bool:
 def unavailable_reason() -> str:
     if WGC_AVAILABLE:
         return ""
+    if _OS_TOO_OLD:
+        return (f"系统版本过低：Windows.Graphics.Capture 需要 Windows 10 1803"
+                f"（build {WGC_MIN_BUILD}）及以上，当前 build {os_build()}"
+                "（Windows Server 2016 / 早期 Win10 都不支持）")
     return f"未安装或不兼容 wgc_python（{_IMPORT_ERROR}）"
 
 

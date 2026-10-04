@@ -201,6 +201,28 @@ if dwmapi is not None:
 
 
 # ---------------------------------------------------------------------------
+# 会话（RDS / 多用户）
+# ---------------------------------------------------------------------------
+_proto(kernel32.ProcessIdToSessionId, [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)],
+       wintypes.BOOL)
+
+
+def current_session_id() -> int:
+    """当前进程所在的 Windows 会话 ID（RDS 多人时每人一个会话）。
+
+    单实例用的命名管道必须按「用户 + 会话」区分，否则第二个用户启动程序时
+    会连上第一个用户的实例、以为自己已经开着而直接退出。
+    """
+    try:
+        session = wintypes.DWORD(0)
+        if kernel32.ProcessIdToSessionId(kernel32.GetCurrentProcessId(), ctypes.byref(session)):
+            return int(session.value)
+    except Exception:
+        pass
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # DPI
 # ---------------------------------------------------------------------------
 def enable_dpi_awareness() -> str:

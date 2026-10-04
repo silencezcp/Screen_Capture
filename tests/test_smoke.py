@@ -301,6 +301,73 @@ class EngineTests(unittest.TestCase):
         self.assertGreaterEqual(elapsed, 0.8)
 
 
+class WgcCompatibilityTests(unittest.TestCase):
+    """老系统（Server 2016 / build 14393）上没有 Windows.Graphics.Capture，必须直接判定不可用。"""
+
+    def test_build_gate(self):
+        from screen_capture import capture_wgc as wgc
+
+        self.assertEqual(wgc.WGC_MIN_BUILD, 17134, "WGC 最低构建号应为 1803 / 17134")
+        self.assertGreater(wgc.os_build(), 0, "应当能取到系统构建号")
+        if wgc.os_build() < wgc.WGC_MIN_BUILD:
+            self.assertFalse(wgc.available(), "老系统上 WGC 必须判定为不可用")
+            self.assertIn("系统版本过低", wgc.unavailable_reason())
+        else:
+            self.assertTrue(wgc.unavailable_reason() == "" or "wgc_python" in wgc.unavailable_reason())
+        print(f"  [info] 系统 build {wgc.os_build()}，WGC 可用={wgc.available()}，"
+              f"原因={wgc.unavailable_reason() or '无（可用）'}")
+
+
+class MultiUserTests(unittest.TestCase):
+    """服务器 / 多人同时使用：路径按用户分开、单实例名按用户+会话区分。"""
+
+    def test_multiuser_paths_are_per_user(self):
+        import os
+        import tempfile
+        from screen_capture import paths
+
+        with tempfile.TemporaryDirectory(prefix="mu_") as tmp:
+            fake_app = Path(tmp)
+            # 没有标记时：仍用程序目录（单机/便携行为不变）
+            old_app_dir = paths.app_dir
+            paths.app_dir = lambda: fake_app
+            try:
+                os.environ.pop("SCREEN_CAPTURE_MULTIUSER", None)
+                self.assertFalse(paths.multi_user_mode())
+                self.assertEqual(paths.default_capture_dir(), fake_app / "ScreenCapture")
+
+                # 有 multi_user.txt 时：日志与截图目录都退到当前用户目录
+                (fake_app / paths.MULTI_USER_MARKER).write_text("x", encoding="utf-8")
+                self.assertTrue(paths.multi_user_mode())
+                capture = paths.default_capture_dir()
+                logs = paths.default_log_dir()
+                self.assertNotEqual(capture.parent, fake_app, "多人模式下截图目录不能放在共用程序目录")
+                self.assertNotEqual(logs.parent, fake_app, "多人模式下日志目录不能放在共用程序目录")
+                self.assertIn("ScreenCaptureTool", str(capture))
+                self.assertEqual(capture.name, "ScreenCapture")
+                self.assertEqual(logs.name, "logs")
+
+                # 环境变量可以强制关闭多人模式（覆盖标记）
+                os.environ["SCREEN_CAPTURE_MULTIUSER"] = "0"
+                self.assertFalse(paths.multi_user_mode())
+            finally:
+                paths.app_dir = old_app_dir
+                os.environ.pop("SCREEN_CAPTURE_MULTIUSER", None)
+        print("  [info] 多人模式路径：日志/截图按用户分开，程序目录只读")
+
+    def test_instance_name_per_user_session(self):
+        from screen_capture.gui_qt import instance_name
+        from screen_capture import win32 as w
+
+        name = instance_name()
+        self.assertIn(f".s{w.current_session_id()}", name)
+        self.assertTrue(name.startswith("ScreenCaptureTool."))
+        # 名字里不能出现中文/空格等（命名管道名要安全）
+        self.assertTrue(name.isascii(), name)
+        self.assertNotIn(" ", name)
+        print(f"  [info] 单实例名按用户+会话区分：{name}")
+
+
 class FolderModeTests(unittest.TestCase):
     """子目录命名：按「窗口标题」分目录，不同标题不同目录。"""
 
