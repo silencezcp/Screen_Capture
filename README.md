@@ -13,14 +13,19 @@
 
 ## 下载（免安装便携版）
 
-不想折腾 Python 环境就直接下这个 —— **同一份文件，两边都能下，内容一致**（Gitee 在国内更快）：
+不想折腾 Python 环境就直接下这个（Gitee 在国内最快）：
 
 | 平台 | 下载 |
 | --- | --- |
-| **Gitee（国内推荐）** | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
-| GitHub | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
+| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.6/ScreenCaptureTool_v1.0.6_portable_win64.zip) |
+| GitHub（归档） | [⬇ ScreenCaptureTool_v1.0.4_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
 
-约 65 MB —— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
+代码仓库同步在 [Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
+[GitCode](https://gitcode.com/qq_24919633/Screen_Capture)、
+[GitHub](https://github.com/silencezcp/Screen_Capture)（归档）。
+便携包附件发布在 Gitee 发行版（GitCode 的 API 不支持上传附件，只能在其网页上手动上传）。
+
+约 70 MB —— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
 `应用窗口定时截图工具\应用窗口定时截图工具.exe` 即可使用，免安装、免配置。
 
 > * 别只把 exe 单独拷出来，它需要同级的 `_internal` 文件夹；
@@ -30,8 +35,8 @@
 > * 全部版本：[Gitee Releases](https://gitee.com/silence95/Screen_Capture/releases) ｜
 >   [GitHub Releases](https://github.com/silencezcp/Screen_Capture/releases)。
 
-> **本仓库双端同步**：主仓库在 GitHub，Gitee 是镜像，内容（含标签与发行版附件）保持一致。
-> 建议国内用户在 Gitee 侧浏览与下载。
+> **仓库同步**：主仓库在 **Gitee**，GitCode 与 GitHub 为镜像，代码与标签保持一致。
+> 日常推送只走 Gitee + GitCode（`git push origin main` 一条命令推两个平台）。
 
 ## 系统兼容性（含 Windows Server）
 
@@ -300,6 +305,7 @@ python build_exe.py --onefile    :: 单文件版
 python sync_release.py --version 1.0.7 --notes "本次更新说明"
 python sync_release.py --version 1.0.7 --check      :: 只检查令牌与打包源，不上传
 python sync_release.py --version 1.0.7 --github     :: 需要时同时发 GitHub
+:: 默认发布到 Gitee（附件自动上传）+ GitCode（建发行版，附件需到网页手动上传）
 ```
 
 它会：把 `dist\应用窗口定时截图工具` 打包成 `ScreenCaptureTool_v1.0.7_portable_win64.zip` →
@@ -307,7 +313,8 @@ python sync_release.py --version 1.0.7 --github     :: 需要时同时发 GitHub
 打印下载地址与 SHA256。Gitee 令牌取自环境变量 `GITEE_TOKEN` 或 `.tools\gitee_token.txt`
 （`.tools/` 已 gitignore，不会入库）；GitHub 只在加 `--github` 时才发布。
 
-> **远端约定**：`origin` = Gitee（主仓库，日常只推这里）；`github` = GitHub（仅保留拉取，不再推送）。
+> **远端约定**：`origin` 配了两个推送地址 = **Gitee + GitCode**（日常 `git push origin main` 一条命令推两个平台）；
+> `github` 仅保留拉取，不再推送。
 
 > ⚠ **为什么必须部署？** 在受限环境里（例如本机的 DSH 工作区 `D:\DSH_Workspaces\...`），
 > 目录本身带 **Low 完整性标签**，从这里写出来的 exe 会继承 Low；而普通用户进程是 Medium，

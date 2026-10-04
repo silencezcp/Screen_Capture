@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""一条命令把 portable 便携包同步发布到 Gitee（默认）与 GitHub（可选）。
+"""一条命令把 portable 便携包同步发布到 Gitee + GitCode（可选 GitHub）。
 
 用法::
 
@@ -11,7 +11,7 @@
 做的事：
   1. 把 dist\\应用窗口定时截图工具（或本机部署版）打成 ScreenCaptureTool_v<版本>_portable_win64.zip
   2. 打标签 v<版本> 并推送 main + 标签到 origin（= Gitee）
-  3. Gitee：建发行版 + 上传附件（令牌取自环境变量 GITEE_TOKEN 或 .tools/gitee_token.txt）
+  3. Gitee + GitCode：建发行版 + 上传附件（令牌取自环境变量 GITEE_TOKEN / GITCODE_TOKEN，\n     或 .tools/gitee_token.txt、.tools/gitcode_token.txt）
   4. GitHub：仅在 --github 时执行（令牌取自 git 凭据管理器，不落盘）
   5. 打印下载地址与 SHA256
 
@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent
 TOOLS = ROOT / ".tools"
 GH_REPO = "silencezcp/Screen_Capture"
 GITEE_REPO = "silence95/Screen_Capture"
+GITCODE_REPO = "qq_24919633/Screen_Capture"
 APP_FOLDER = "应用窗口定时截图工具"
 
 
@@ -63,6 +64,17 @@ def gitee_token() -> str:
     if token:
         return token
     path = TOOLS / "gitee_token.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def gitcode_token() -> str:
+    """GitCode 已禁用密码推送，只能用访问令牌。"""
+    token = os.environ.get("GITCODE_TOKEN", "").strip()
+    if token:
+        return token
+    path = TOOLS / "gitcode_token.txt"
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     return ""
@@ -168,8 +180,34 @@ def publish_gitee(version: str, tag: str, bundle: Path, notes: str, token: str) 
     return f"https://gitee.com/{GITEE_REPO}/releases/download/{tag}/{bundle.name}"
 
 
+def publish_gitcode(version: str, tag: str, bundle: Path, notes: str, token: str) -> str:
+    """GitCode 的 API 与 Gitee 兼容（/api/v5），令牌同样必须走查询参数。"""
+    if not token:
+        log("  跳过 GitCode：没有令牌（设置 GITCODE_TOKEN 或写入 .tools/gitcode_token.txt）")
+        return ""
+    releases = http_get_json(f"https://gitcode.com/api/v5/repos/{GITCODE_REPO}"
+                             f"/releases?access_token={token}&per_page=50")
+    release = next((r for r in releases if r.get("tag_name") == tag), None)
+    if release is None:
+        release = http_json(f"https://gitcode.com/api/v5/repos/{GITCODE_REPO}/releases?access_token={token}",
+                            {"tag_name": tag,
+                             "name": f"{tag} 便携版（Windows x64）", "body": notes,
+                             "target_commitish": "main"})
+        log(f"  GitCode 发行版已创建：{tag}")
+    else:
+        log(f"  GitCode 发行版已存在：{tag}")
+    has_portable = any(a.get("name") == bundle.name for a in release.get("assets", []))
+    if not has_portable:
+        # GitCode 的发行版 JSON 没有 id 字段，也不提供附件上传接口（试过 404/405），
+        # 所以便携包只能在它的网页上手动拖拽上传。
+        log("  GitCode 不支持 API 上传附件，请到网页手动上传便携包：")
+        log(f"    页面：https://gitcode.com/{GITCODE_REPO}/releases")
+        log(f"    文件：{bundle}")
+    return f"https://gitcode.com/{GITCODE_REPO}/releases/tag/{tag}"
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="把 portable 包同步发布到 GitHub 与 Gitee")
+    parser = argparse.ArgumentParser(description="把 portable 包同步发布到 Gitee + GitCode（可选 GitHub）")
     parser.add_argument("--version", required=True, help="版本号，如 1.0.5（会自动加 v 前缀打标签）")
     parser.add_argument("--notes", default="", help="发行说明；留空则用默认说明")
     parser.add_argument("--check", action="store_true", help="只检查打包源与令牌，不上传")
@@ -183,11 +221,12 @@ def main(argv=None) -> int:
     notes = args.notes or (f"## {tag} 便携版（Windows x64）\n\n"
                            "解压到普通目录（桌面/文档/D:\\Tools）后双击 exe 即可使用。")
 
-    gh_token, gt_token = github_token(), gitee_token()
+    gh_token, gt_token, gc_token = github_token(), gitee_token(), gitcode_token()
     log(f"版本：{tag}")
     if args.github:
         log(f"  GitHub 令牌：{'已获取' if gh_token else '缺失（git 凭据管理器里没有 github.com）'}")
-    log(f"  Gitee 令牌：{'已获取' if gt_token else '缺失（设置 GITEE_TOKEN 或 .tools/gitee_token.txt）'}")
+    log(f"  Gitee   令牌：{'已获取' if gt_token else '缺失（设置 GITEE_TOKEN 或 .tools/gitee_token.txt）'}")
+    log(f"  GitCode 令牌：{'已获取' if gc_token else '缺失（设置 GITCODE_TOKEN 或 .tools/gitcode_token.txt）'}")
     bundle = make_bundle(version)
     digest = sha256(bundle.read_bytes()).hexdigest().upper()
     log(f"  便携包：{bundle.name}  {bundle.stat().st_size / 1024 / 1024:.1f} MB")
@@ -198,7 +237,7 @@ def main(argv=None) -> int:
         return 0
 
     if not args.no_push:
-        log("\n推送 git（origin = Gitee）…")
+        log("\n推送 git（origin = Gitee + GitCode）…")
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True,
                               capture_output=True).stdout.strip()
         log(f"  当前提交：{head}")
@@ -210,12 +249,15 @@ def main(argv=None) -> int:
     if args.github and gh_token:
         url_gh = publish_github(version, tag, bundle, notes, gh_token)
     url_gt = publish_gitee(version, tag, bundle, notes, gt_token)
+    url_gc = publish_gitcode(version, tag, bundle, notes, gc_token)
 
-    log("\n=== 下载地址（默认只发 Gitee）===")
-    if url_gh:
-        log(f"  GitHub：{url_gh}")
+    log("\n=== 发布地址（Gitee + GitCode）===")
     if url_gt:
-        log(f"  Gitee ：{url_gt}")
+        log(f"  Gitee  ：{url_gt}")
+    if url_gc:
+        log(f"  GitCode：{url_gc}")
+    if url_gh:
+        log(f"  GitHub ：{url_gh}")
     log(f"  SHA256：{digest}")
     return 0
 
