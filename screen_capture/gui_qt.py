@@ -157,7 +157,7 @@ METHOD_CHOICES = [
 ]
 FORMAT_CHOICES = ["png", "jpg", "bmp", "webp"]
 FOLDER_CHOICES = [
-    ("按应用复用同一文件夹（推荐）", FOLDER_APP),
+    ("按窗口标题分文件夹（推荐）", FOLDER_APP),
     ("每次开始新建带时间戳的文件夹", FOLDER_SESSION),
     ("不用子目录，直接放在保存目录", FOLDER_FLAT),
 ]
@@ -172,7 +172,7 @@ LIVE_FIELD_NAMES = {
     "capture_cursor": "鼠标光标", "activate_before_capture": "截图前激活窗口",
 }
 # 版本 2 起默认保存目录改为「程序目录\ScreenCapture」，旧版本记录要重设一次
-SETTINGS_VERSION = 4
+SETTINGS_VERSION = 5
 
 
 def default_output_dir() -> Path:

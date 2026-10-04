@@ -23,6 +23,7 @@ from screen_capture.engine import (  # noqa: E402
     CaptureConfig,
     CaptureEngine,
     Target,
+    TARGET_SCREEN,
     TARGET_WINDOW,
     build_filename,
     sanitize_filename_part,
@@ -298,6 +299,59 @@ class EngineTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         print(f"  [info] 3 张截图用时 {elapsed:.2f} 秒，文件：{[p.name for p in files]}")
         self.assertGreaterEqual(elapsed, 0.8)
+
+
+class FolderModeTests(unittest.TestCase):
+    """子目录命名：按「窗口标题」分目录，不同标题不同目录。"""
+
+    def _engine(self, output_dir: Path, folder_mode: str) -> CaptureEngine:
+        config = CaptureConfig(
+            target=Target(kind=TARGET_WINDOW),
+            output_dir=str(output_dir),
+            folder_mode=folder_mode,
+        )
+        return CaptureEngine(config, lambda _event: None)
+
+    def test_folder_named_by_window_title(self):
+        out = OUT_DIR / "folders"
+        engine = self._engine(out, "app")
+        cases = [
+            ("鸣潮  ", "Client-Win64-Shipping.exe"),
+            ("番茄免费小说", "Androws.exe"),
+            ("a/b:c*?\"<>|d", "evil.exe"),          # 非法字符要被替换
+            ("", "bare.exe"),                        # 没标题 → 退回进程名
+        ]
+        names = []
+        for title, app in cases:
+            engine._target = Target(kind=TARGET_WINDOW, hwnd=0x11108A, title=title, app_label=app)
+            names.append(engine._resolve_directory().name)
+        self.assertEqual(names[0], "鸣潮", names)
+        self.assertEqual(names[1], "番茄免费小说", names)
+        self.assertNotIn("/", names[2])
+        self.assertNotIn(":", names[2])
+        self.assertNotIn("*", names[2])
+        self.assertEqual(names[3], "bare.exe", names)
+        self.assertEqual(len(set(names)), len(names), f"不同标题必须落不同目录：{names}")
+
+        # 同一个标题（含标题末尾空格差异）必须落到同一个目录
+        engine._target = Target(kind=TARGET_WINDOW, hwnd=0x222222, title="鸣潮  ", app_label="other.exe")
+        self.assertEqual(engine._resolve_directory().name, "鸣潮")
+        print(f"  [info] 文件夹按窗口标题命名：{names}")
+
+    def test_screen_target_folder_and_session_mode(self):
+        out = OUT_DIR / "folders2"
+        engine = self._engine(out, "app")
+        engine._target = Target(kind=TARGET_SCREEN, title="整个屏幕")
+        self.assertEqual(engine._resolve_directory().name, "整个屏幕")
+
+        engine = self._engine(out, "session")
+        engine._target = Target(kind=TARGET_WINDOW, hwnd=1, title="鸣潮", app_label="x.exe")
+        name = engine._resolve_directory().name
+        self.assertTrue(name.startswith("鸣潮_"), name)
+
+        engine = self._engine(out, "flat")
+        engine._target = Target(kind=TARGET_WINDOW, hwnd=1, title="鸣潮", app_label="x.exe")
+        self.assertEqual(engine._resolve_directory(), Path(str(out)))
 
 
 if __name__ == "__main__":

@@ -222,7 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="文件名模板，可用 {app} {date} {time} {datetime} {index} {hwnd}")
     parser.add_argument("--no-subdir", action="store_true", help="不建子目录，截图直接放在 --out 目录里")
     parser.add_argument("--folder-mode", default="app", choices=["app", "session", "flat"],
-                        help="子目录方式：app=按应用复用同一文件夹（默认）/ session=每次新建时间戳文件夹 / flat=不建")
+                        help="子目录方式：app=按窗口标题分文件夹（默认）/ session=每次新建时间戳文件夹 / flat=不建")
     parser.add_argument("--skip-unchanged", action="store_true", help="画面与上一张相同则不保存")
     parser.add_argument("--no-manifest", action="store_true", help="不写 capture_manifest.csv")
     parser.add_argument("--quiet", action="store_true", help="只输出必要的保存信息")

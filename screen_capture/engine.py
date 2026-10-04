@@ -198,7 +198,7 @@ def image_digest(image: Image.Image, size: int = 48) -> str:
 def resolve_target(target: Target) -> Target:
     """把目标解析成当前真实存在的窗口句柄。"""
     if target.kind == TARGET_SCREEN:
-        return Target(kind=TARGET_SCREEN)
+        return Target(kind=TARGET_SCREEN, title=target.title or "整个屏幕")
     hwnd = int(target.hwnd or 0)
     if hwnd and w.is_window(hwnd):
         info = w.window_info(hwnd)
@@ -374,24 +374,42 @@ class CaptureEngine:
                 pass
 
     # -- 输出目录 / 清单 ---------------------------------------------------
-    def _app_folder_name(self) -> str:
+    def _folder_label(self) -> str:
+        """文件夹名：取「窗口标题」（不同标题 → 不同目录）。
+
+        屏幕目标固定用「整个屏幕」；标题为空（极少数无标题窗口）时退回进程名 / 句柄。
+        """
         target = self._target
-        label = ""
-        if target is not None:
-            label = target.app_label or (
-                "screen" if target.kind == TARGET_SCREEN else target.title
-            )
-        return sanitize_filename_part(label or "capture", 60)
+        if target is None:
+            return "capture"
+        if target.kind == TARGET_SCREEN:
+            return "整个屏幕"
+        title = sanitize_filename_part(target.title, 80) if target.title else ""
+        if title and title != "capture":
+            return title
+        label = sanitize_filename_part(target.app_label, 60) if target.app_label else ""
+        if label and label != "capture":
+            return label
+        return f"窗口0x{int(target.hwnd or 0):X}"
+
+    def _app_label(self) -> str:
+        """文件名里 {app} 用的标签：进程名（稳定、跨标题不变）。"""
+        target = self._target
+        if target is None:
+            return "capture"
+        if target.kind == TARGET_SCREEN:
+            return "screen"
+        return target.app_label or sanitize_filename_part(target.title, 40) or "window"
 
     def _resolve_directory(self) -> Path:
         """按子目录方式算出这次的保存目录。"""
         base = Path(self.config.output_dir).expanduser()
-        app = self._app_folder_name()
+        folder = self._folder_label()
         if self.config.folder_mode == FOLDER_SESSION:
-            return base / f"{sanitize_filename_part(app, 40)}_{datetime.now():%Y%m%d_%H%M%S}"
+            return base / f"{sanitize_filename_part(folder, 40)}_{datetime.now():%Y%m%d_%H%M%S}"
         if self.config.folder_mode == FOLDER_APP:
-            # 同一个应用始终用同一个文件夹（已存在就直接用，不再新建）
-            return base / app
+            # 同一个窗口标题始终用同一个文件夹（已存在就直接用，不再新建）
+            return base / folder
         return base
 
     def _open_manifest(self) -> None:
@@ -661,7 +679,7 @@ class CaptureEngine:
                     else:
                         try:
                             path = self._save(image, stats["saved"] + 1, self._directory,
-                                              self._app_folder_name())
+                                              self._app_label())
                         except Exception as exc:
                             stats["failures"] += 1
                             self._emit({"type": "error", "message": f"保存图片失败：{exc}",
