@@ -526,18 +526,21 @@ class MainWindow(QMainWindow):
         self.count_spin = QSpinBox()
         self.count_spin.setRange(0, 1000000)
         self.count_spin.setSpecialValueText("0（不限）")
-        self.count_spin.setFixedWidth(96)
         count_row.addWidget(self.count_spin)
         count_row.addWidget(QLabel("最长运行时长（秒）"))
         self.duration_spin = QDoubleSpinBox()
         self.duration_spin.setRange(0, 86400 * 7)
         self.duration_spin.setDecimals(1)
         self.duration_spin.setSpecialValueText("0（不限）")
-        self.duration_spin.setFixedWidth(96)
         count_row.addWidget(self.duration_spin)
         count_row.addStretch(1)
         grid.addLayout(count_row, row, 1)
         row += 1
+        # 「0（不限）」比普通数字长得多，宽度按文本实测，别再被截断
+        for spin in (self.count_spin, self.duration_spin):
+            spin.setMinimumWidth(
+                spin.fontMetrics().horizontalAdvance(spin.specialValueText()) + 58
+            )
 
         grid.addWidget(QLabel("截图方式"), row, 0)
         self.method_combo = QComboBox()
