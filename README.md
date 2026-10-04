@@ -15,7 +15,7 @@
 
 不想折腾 Python 环境就直接下这个：
 
-**[⬇ ScreenCaptureTool_v1.0.1_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.1/ScreenCaptureTool_v1.0.1_portable_win64.zip)**
+**[⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip)**
 （约 65 MB）—— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
 `应用窗口定时截图工具\应用窗口定时截图工具.exe` 即可使用，免安装、免配置。
 
