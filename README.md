@@ -17,8 +17,8 @@
 
 | 平台 | 下载 |
 | --- | --- |
-| **Gitee（国内推荐）** | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip) |
-| GitHub | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.2/ScreenCaptureTool_v1.0.2_portable_win64.zip) |
+| **Gitee（国内推荐）** | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
+| GitHub | [⬇ ScreenCaptureTool_v1.0.2_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
 
 约 65 MB —— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
 `应用窗口定时截图工具\应用窗口定时截图工具.exe` 即可使用，免安装、免配置。
