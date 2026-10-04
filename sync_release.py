@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""一条命令把 portable 便携包同步发布到 GitHub 与 Gitee。
+"""一条命令把 portable 便携包同步发布到 Gitee（默认）与 GitHub（可选）。
 
 用法::
 
-    python sync_release.py --version 1.0.5 --notes "本次更新说明"
-    python sync_release.py --version 1.0.5 --check      # 只检查环境与现状，不上传
+    python sync_release.py --version 1.0.7 --notes "本次更新说明"
+    python sync_release.py --version 1.0.7 --check       # 只检查环境与现状，不上传
+    python sync_release.py --version 1.0.7 --github      # 同时发布到 GitHub（默认不发）
 
 做的事：
   1. 把 dist\\应用窗口定时截图工具（或本机部署版）打成 ScreenCaptureTool_v<版本>_portable_win64.zip
-  2. 打标签 v<版本> 并推送 main + 标签到两个远端（origin 已配置为双推）
-  3. GitHub：建发行版 + 上传附件（令牌取自 git 凭据管理器，不落盘）
-  4. Gitee：建发行版 + 上传附件（令牌取自环境变量 GITEE_TOKEN 或 .tools/gitee_token.txt）
-  5. 打印两端的下载地址与 SHA256
+  2. 打标签 v<版本> 并推送 main + 标签到 origin（= Gitee）
+  3. Gitee：建发行版 + 上传附件（令牌取自环境变量 GITEE_TOKEN 或 .tools/gitee_token.txt）
+  4. GitHub：仅在 --github 时执行（令牌取自 git 凭据管理器，不落盘）
+  5. 打印下载地址与 SHA256
 
 注意：Gitee 的 attach_files 接口必须把 access_token 放在 URL 查询参数里，
 放在表单里会返回 401（踩过的坑）。
@@ -173,6 +174,8 @@ def main(argv=None) -> int:
     parser.add_argument("--notes", default="", help="发行说明；留空则用默认说明")
     parser.add_argument("--check", action="store_true", help="只检查打包源与令牌，不上传")
     parser.add_argument("--no-push", action="store_true", help="不推送 git（只发发行版）")
+    parser.add_argument("--github", action="store_true",
+                        help="同时也发布到 GitHub（默认只发 Gitee）")
     args = parser.parse_args(argv)
 
     tag = args.version if args.version.startswith("v") else f"v{args.version}"
@@ -182,8 +185,9 @@ def main(argv=None) -> int:
 
     gh_token, gt_token = github_token(), gitee_token()
     log(f"版本：{tag}")
-    log(f"  GitHub 令牌：{'已获取' if gh_token else '缺失（git 凭据管理器里没有 github.com）'}")
-    log(f"  Gitee  令牌：{'已获取' if gt_token else '缺失（设置 GITEE_TOKEN 或 .tools/gitee_token.txt）'}")
+    if args.github:
+        log(f"  GitHub 令牌：{'已获取' if gh_token else '缺失（git 凭据管理器里没有 github.com）'}")
+    log(f"  Gitee 令牌：{'已获取' if gt_token else '缺失（设置 GITEE_TOKEN 或 .tools/gitee_token.txt）'}")
     bundle = make_bundle(version)
     digest = sha256(bundle.read_bytes()).hexdigest().upper()
     log(f"  便携包：{bundle.name}  {bundle.stat().st_size / 1024 / 1024:.1f} MB")
@@ -194,7 +198,7 @@ def main(argv=None) -> int:
         return 0
 
     if not args.no_push:
-        log("\n推送 git（origin 已配置为同时推 GitHub 与 Gitee）…")
+        log("\n推送 git（origin = Gitee）…")
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True,
                               capture_output=True).stdout.strip()
         log(f"  当前提交：{head}")
@@ -202,10 +206,12 @@ def main(argv=None) -> int:
         subprocess.run(["git", "tag", "-f", tag], cwd=ROOT, check=False)
         subprocess.run(["git", "push", "-f", "origin", tag], cwd=ROOT, check=False)
 
-    url_gh = publish_github(version, tag, bundle, notes, gh_token) if gh_token else ""
+    url_gh = ""
+    if args.github and gh_token:
+        url_gh = publish_github(version, tag, bundle, notes, gh_token)
     url_gt = publish_gitee(version, tag, bundle, notes, gt_token)
 
-    log("\n=== 下载地址 ===")
+    log("\n=== 下载地址（默认只发 Gitee）===")
     if url_gh:
         log(f"  GitHub：{url_gh}")
     if url_gt:

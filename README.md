@@ -297,14 +297,17 @@ python build_exe.py --onefile    :: 单文件版
 **发布 portable 便携包到两端（一条命令）**：
 
 ```bat
-python sync_release.py --version 1.0.5 --notes "本次更新说明"
-python sync_release.py --version 1.0.5 --check      :: 只检查令牌与打包源，不上传
+python sync_release.py --version 1.0.7 --notes "本次更新说明"
+python sync_release.py --version 1.0.7 --check      :: 只检查令牌与打包源，不上传
+python sync_release.py --version 1.0.7 --github     :: 需要时同时发 GitHub
 ```
 
-它会：把 `dist\应用窗口定时截图工具` 打包成 `ScreenCaptureTool_v1.0.5_portable_win64.zip` →
-打标签并推送 `main` + 标签到 GitHub/Gitee → 在两端建发行版并上传附件 → 打印下载地址与 SHA256。
-GitHub 令牌取自 Windows 凭据管理器（不落盘）；Gitee 令牌取自环境变量 `GITEE_TOKEN`
-或 `.tools\gitee_token.txt`（`.tools/` 已 gitignore，不会入库）。
+它会：把 `dist\应用窗口定时截图工具` 打包成 `ScreenCaptureTool_v1.0.7_portable_win64.zip` →
+打标签并推送 `main` + 标签到 `origin`（**= Gitee**）→ 在 Gitee 建发行版并上传附件 →
+打印下载地址与 SHA256。Gitee 令牌取自环境变量 `GITEE_TOKEN` 或 `.tools\gitee_token.txt`
+（`.tools/` 已 gitignore，不会入库）；GitHub 只在加 `--github` 时才发布。
+
+> **远端约定**：`origin` = Gitee（主仓库，日常只推这里）；`github` = GitHub（仅保留拉取，不再推送）。
 
 > ⚠ **为什么必须部署？** 在受限环境里（例如本机的 DSH 工作区 `D:\DSH_Workspaces\...`），
 > 目录本身带 **Low 完整性标签**，从这里写出来的 exe 会继承 Low；而普通用户进程是 Medium，
