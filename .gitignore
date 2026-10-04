@@ -1,7 +1,8 @@
 # ---- 构建产物 / 依赖（体积大，不入库）----
 build/
 dist/
-.packages/
+# packages 是本地依赖包（约 196 MB），不入库
+packages/
 .tools/
 wheels/
 .venv/

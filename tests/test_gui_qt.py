@@ -170,15 +170,20 @@ class QtUiTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         self.assertLess(elapsed, 2.5, f"改了间隔后没有立即按新间隔截图（等了 {elapsed:.1f}s）")
 
-        # 运行中把上限改成 2：满足后应立即结束
-        self.win.count_spin.setValue(2)
+        # 运行中把上限改成「当前张数」：应立即收尾（正在抓的那一张允许落盘）
+        current = self.win.counts["saved"]
+        self.win.count_spin.setValue(current)
         self.win.apply_live_config()
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 10
         while self.win.engine.running and time.monotonic() < deadline:
             self.pump(0.05)
         self.assertFalse(self.win.engine.running, "改了上限后任务没有立即结束")
-        self.assertEqual(self.win.counts["saved"], 2, f"上限没有即时生效：{self.win.counts}")
-        print(f"  [info] 运行中改间隔/上限即时生效：新间隔后 {elapsed:.2f}s 出下一张，共 {self.win.counts['saved']} 张")
+        final = self.win.counts["saved"]
+        self.assertLessEqual(final, current + 1, f"改了上限后还多截了好几张：{current} -> {final}")
+        files = sorted(target_dir.glob("*.png"))
+        self.assertEqual(len(files), final, f"文件数 {len(files)} 与计数 {final} 不一致")
+        print(f"  [info] 运行中改间隔/上限即时生效：新间隔后 {elapsed:.2f}s 出下一张，"
+              f"上限改小后立刻收尾（共 {final} 张）")
 
     def test_new_options_and_arrow(self):
         """更多选项要齐全，下拉框要有箭头图片。"""

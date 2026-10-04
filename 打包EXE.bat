@@ -5,7 +5,7 @@ rem 会依次尝试：项目内 .venv -> py -3 -> python -> DSH 运行库自带 Python
 setlocal
 cd /d "%~dp0"
 
-if exist "%~dp0.packages\PyInstaller" set "PYTHONPATH=%~dp0.packages"
+if exist "%~dp0packages\PyInstaller" set "PYTHONPATH=%~dp0packages"
 
 set "PYEXE="
 if exist "%~dp0.venv\Scripts\python.exe" set "PYEXE=%~dp0.venv\Scripts\python.exe"

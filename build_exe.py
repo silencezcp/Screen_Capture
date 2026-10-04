@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent
 ICON = ROOT / "assets" / "app.ico"
@@ -69,10 +70,10 @@ def log(message: str) -> None:
 
 
 def ensure_pyinstaller() -> bool:
-    """确保 PyInstaller 可以被导入；顺带支持放在项目里的 .packages 目录。"""
+    """确保 PyInstaller 可以被导入；顺带支持放在项目里的 packages 目录。"""
     if importlib.util.find_spec("PyInstaller") is not None:
         return True
-    local = ROOT / ".packages"
+    local = ROOT / "packages"
     if local.is_dir():
         sys.path.insert(0, str(local))
         os.environ["PYTHONPATH"] = str(local) + os.pathsep + os.environ.get("PYTHONPATH", "")
@@ -195,6 +196,47 @@ def integrity_label(path: Path) -> str:
     return ""
 
 
+def create_shortcut(target: Path, name: str = "应用窗口定时截图工具") -> Optional[Path]:
+    """在桌面创建快捷方式。
+
+    做法是「先写一个 UTF-8 的 .ps1，再执行它」，避免把中文直接塞进命令行
+    （cmd → PowerShell 的编码很容易把中文变成乱码，最后静默失败）。
+    """
+    if not target.exists():
+        log(f"  跳过快捷方式：找不到 {target}")
+        return None
+    script = BUILD / "make_shortcut.ps1"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        "$desktop = [Environment]::GetFolderPath('Desktop')\n"
+        f"$link = Join-Path $desktop '{name}.lnk'\n"
+        "$shell = New-Object -ComObject WScript.Shell\n"
+        "$sc = $shell.CreateShortcut($link)\n"
+        f"$sc.TargetPath = '{target}'\n"
+        f"$sc.WorkingDirectory = '{target.parent}'\n"
+        f"$sc.IconLocation = '{target},0'\n"
+        "$sc.Description = '应用窗口定时截图工具'\n"
+        "$sc.Save()\n"
+        "Write-Output $link\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    link = None
+    for line in (result.stdout or "").splitlines():
+        if line.strip().lower().endswith(".lnk"):
+            link = Path(line.strip())
+    if result.returncode != 0 or link is None:
+        log(f"  创建桌面快捷方式失败：{output[:200]}")
+        return None
+    log(f"  桌面快捷方式：{link}")
+    return link
+
+
 def deploy(targets) -> int:
     """把成品复制到普通目录（默认 %LOCALAPPDATA%\\ScreenCaptureTool）。
 
@@ -227,6 +269,14 @@ def deploy(targets) -> int:
             log(f"  已复制文件：{dest / path.name}   {human_size(path)}")
             label = integrity_label(dest / path.name)
         log(f"    完整性标签：{label or '无显式标签（默认 Medium，WGC 可用）'}")
+    app_dir = destination / "app"
+    exe_candidates = list(app_dir.glob("*.exe")) if app_dir.is_dir() else []
+    for path in targets:
+        if path.is_file():
+            exe_candidates.append(path)
+    if exe_candidates:
+        log("")
+        create_shortcut(exe_candidates[0])
     log("以后运行部署目录里的 exe 即可（WGC 抓窗口需要 Medium 及以上权限）。")
     return 0
 
