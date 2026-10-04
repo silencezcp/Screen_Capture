@@ -51,6 +51,12 @@ class QtUiTests(unittest.TestCase):
 
     def setUp(self):
         self.win = MainWindow()
+        # 每个用例都从固定状态开始：格式 png、目录不用子目录之外的一切按设置文件来。
+        # （质量相关的用例会切换格式，而设置会在 tearDown 里存回 ini，
+        #   不重置的话后面的截图用例就会写出 .jpg，与 *.png 断言对不上。）
+        self.win.format_combo.setCurrentText("png")
+        self.win.on_format_changed()
+        self.win.quality_spin.setValue(90)
         self.app.processEvents()
 
     def tearDown(self):
@@ -199,6 +205,33 @@ class QtUiTests(unittest.TestCase):
             else:
                 self.assertIn("无损", self.win.quality_hint.text())
         print("  [info] 质量参数仅对 JPG/WEBP 生效，PNG/BMP 自动禁用并提示")
+
+    def test_disabled_quality_is_visibly_different(self):
+        """禁用态必须一眼看得出（底色加深），而且不能把启用态也染色。
+
+        踩过的坑：给 QSpinBox:disabled::up-button 单独设样式，会让 Qt 把禁用配色
+        画到启用态的 QSpinBox 上，于是启用/禁用看起来一模一样。
+        """
+        from PyQt5.QtCore import QPoint
+
+        self.win.show()
+        self.pump(0.3)
+
+        def body_color(fmt: str) -> str:
+            self.win.format_combo.setCurrentText(fmt)
+            self.win.on_format_changed()
+            self.pump(0.2)
+            spin = self.win.quality_spin
+            point = spin.mapTo(self.win, QPoint(int(spin.width() * 0.3), spin.height() // 2))
+            image = self.win.grab().toImage()
+            return image.pixelColor(point.x(), point.y()).name()
+
+        disabled = body_color("png")
+        enabled = body_color("jpg")
+        self.assertNotEqual(disabled, enabled, "PNG 禁用态与 JPG 启用态颜色不能相同")
+        self.assertEqual(enabled, "#ffffff", f"启用态应当是白底，实际 {enabled}")
+        self.assertNotEqual(disabled, "#ffffff", "禁用态不应该是白底")
+        print(f"  [info] 质量框：启用态 {enabled} / 禁用态 {disabled}（肉眼可区分）")
 
     def test_new_options_and_arrow(self):
         """更多选项要齐全，下拉框要有箭头图片。"""

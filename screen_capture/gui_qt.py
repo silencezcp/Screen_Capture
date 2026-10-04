@@ -61,6 +61,10 @@ OK_COLOR = "#4F9D69"
 WARN_BG = "#FFF4E3"
 WARN_BORDER = "#E9C88A"
 WARN_TEXT = "#8A5A12"
+# 禁用态：明显加深的遮罩色，让「这项当前不生效」一眼可见
+DISABLED_BG = "#E3D8C7"
+DISABLED_BORDER = "#CDBFA8"
+DISABLED_TEXT = "#9C8F7C"
 
 # 单实例的命名管道名：必须按「用户 + 会话」区分！
 # 服务器上多人同时用时，如果名字是全机器共享的，第二个用户启动程序会连上
@@ -177,6 +181,17 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 9px; selection-background-color: {PRIMARY};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 1px solid {PRIMARY}; }}
+/* 禁用态：加深遮罩，明确表示「当前格式下这项不生效」 */
+QSpinBox:disabled, QDoubleSpinBox:disabled, QLineEdit:disabled, QComboBox:disabled {{
+    background: {DISABLED_BG};
+    border: 1px solid {DISABLED_BORDER};
+    color: {DISABLED_TEXT};
+}}
+/* ⚠ 不要给 :disabled 的 up-button/down-button 单独设样式：
+   实测那样会让 Qt 把禁用配色也画到「启用态」的 QSpinBox 上（整体变深），
+   结果启用/禁用看起来一模一样。只改背景 / 边框 / 文字就足够区分。 */
+QCheckBox:disabled {{ color: {DISABLED_TEXT}; }}
+QPushButton:disabled {{ color: {DISABLED_TEXT}; background: {DISABLED_BG}; border-color: {DISABLED_BORDER}; }}
 QComboBox {{ padding-right: 26px; }}
 QComboBox::drop-down {{
     subcontrol-origin: padding; subcontrol-position: center right;

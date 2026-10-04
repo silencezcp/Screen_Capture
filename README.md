@@ -17,7 +17,7 @@
 
 | 平台 | 下载 |
 | --- | --- |
-| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.8/ScreenCaptureTool_v1.0.8_portable_win64.zip) |
+| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.9/ScreenCaptureTool_v1.0.9_portable_win64.zip) |
 | GitHub（归档） | [⬇ ScreenCaptureTool_v1.0.4_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
 
 代码仓库同步在 [Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
