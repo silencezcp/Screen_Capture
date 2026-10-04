@@ -355,6 +355,38 @@ class SettingsLocationTests(unittest.TestCase):
         print("  [info] 设置写入 ini 文件（不碰注册表）")
 
 
+class BatchFileTests(unittest.TestCase):
+    """批处理的格式约束（踩过坑，必须守住）。
+
+    * 换行必须是 CRLF：裸 LF 会让 cmd 把多行粘在一起执行，报一堆
+      「'xxx' 不是内部或外部命令」；
+    * 编码必须是本机代码页（GBK/936）：文件里有中文提示，UTF-8 会被 cmd 读成乱码；
+    * 文件名不要带括号：cmd 解析路径里的 () 会出错。
+    """
+
+    def test_bat_files_are_cmd_safe(self):
+        bats = sorted(ROOT.glob("*.bat"))
+        self.assertTrue(bats, "项目里应当有 .bat 启动脚本")
+        for path in bats:
+            data = path.read_bytes()
+            with self.subTest(bat=path.name):
+                self.assertNotIn(b"\n", data.replace(b"\r\n", b""),
+                                 f"{path.name} 有裸 LF 换行，cmd 会解析错乱")
+                self.assertFalse(data.startswith(b"\xef\xbb\xbf"),
+                                 f"{path.name} 不应带 UTF-8 BOM")
+                try:
+                    text = data.decode("gbk")
+                except UnicodeDecodeError as exc:
+                    self.fail(f"{path.name} 不是 GBK/936 编码：{exc}")
+                # 必须是正常文本：开头是 @echo off，且没有替换字符（乱码痕迹）
+                self.assertTrue(text.lstrip().startswith("@echo off"),
+                                f"{path.name} 第一行应当是 @echo off")
+                self.assertNotIn("\ufffd", text, f"{path.name} 内容有乱码")
+                self.assertIn("rem", text[:400], f"{path.name} 缺少注释头，疑似损坏")
+                self.assertNotIn("(", path.name, f"{path.name} 文件名不要带括号，cmd 会解析失败")
+        print(f"  [info] {len(bats)} 个 .bat 检查通过（CRLF + GBK + 无括号 + 无乱码）")
+
+
 class MultiUserTests(unittest.TestCase):
     """服务器 / 多人同时使用：路径按用户分开、单实例名按用户+会话区分。"""
 
