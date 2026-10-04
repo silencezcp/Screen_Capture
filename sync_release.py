@@ -201,9 +201,9 @@ def publish_gitcode(version: str, tag: str, bundle: Path, notes: str, token: str
         # GitCode 的发行版 JSON 没有 id 字段，也不提供附件上传接口（试过 404/405），
         # 所以便携包只能在它的网页上手动拖拽上传。
         log("  GitCode 不支持 API 上传附件，请到网页手动上传便携包：")
-        log(f"    页面：https://gitcode.com/{GITCODE_REPO}/releases")
+        log(f"    页面：https://gitcode.com/{GITCODE_REPO}/releases/{tag}")
         log(f"    文件：{bundle}")
-    return f"https://gitcode.com/{GITCODE_REPO}/releases/tag/{tag}"
+    return f"https://gitcode.com/{GITCODE_REPO}/releases/{tag}"
 
 
 def main(argv=None) -> int:
