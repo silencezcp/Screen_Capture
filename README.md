@@ -11,6 +11,20 @@
 
 ---
 
+## 下载（免安装便携版）
+
+不想折腾 Python 环境就直接下这个：
+
+**[⬇ ScreenCaptureTool_v1.0.0_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.0/ScreenCaptureTool_v1.0.0_portable_win64.zip)**
+（60.7 MB）—— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
+`应用窗口定时截图工具\应用窗口定时截图工具.exe` 即可使用，免安装、免配置。
+
+> * 别只把 exe 单独拷出来，它需要同级的 `_internal` 文件夹；
+> * 程序未签名，首次运行可能弹 SmartScreen，点「更多信息」→「仍要运行」；
+> * 解压目录若带「低完整性标签」（沙箱 / 受限工作区），进程会被降级为低权限、WGC 会被系统拒绝，
+>   放到桌面这类普通目录即可；自检里的「运行权限」会显示当前级别（`Medium` 正常）。
+> * 全部版本见 [Releases](https://github.com/silencezcp/Screen_Capture/releases)。
+
 ## 1. 运行环境
 
 | 项目 | 要求 |
