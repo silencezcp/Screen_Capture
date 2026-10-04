@@ -29,8 +29,8 @@ ASSETS = ROOT / "assets"
 # （dist 里的程序正在运行时文件会被占用，这时就用它换个目录打包）
 DIST = Path(os.environ.get("SCREEN_CAPTURE_DIST") or (ROOT / "dist"))
 BUILD = ROOT / "build"
-VERSION = (1, 0, 0, 0)
-VERSION_TEXT = "1.0.0.0"
+VERSION = (1, 0, 1, 0)
+VERSION_TEXT = "1.0.1.0"
 
 GUI_NAME = "应用窗口定时截图工具"
 CLI_NAME = "应用窗口定时截图工具-命令行"
@@ -41,7 +41,7 @@ HIDDEN_IMPORTS = [
     "PIL.PngImagePlugin", "PIL.JpegImagePlugin", "PIL.BmpImagePlugin", "PIL.WebPImagePlugin",
     "tkinter", "tkinter.ttk", "tkinter.font", "tkinter.filedialog",
     "tkinter.messagebox", "tkinter.scrolledtext",
-    "PyQt5", "PyQt5.sip", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets",
+    "PyQt5", "PyQt5.sip", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets", "PyQt5.QtNetwork",
     "numpy", "wgc_python",
     "screen_capture", "screen_capture.cli", "screen_capture.gui", "screen_capture.gui_qt",
     "screen_capture.engine", "screen_capture.win32", "screen_capture.selftest",
@@ -58,7 +58,7 @@ EXCLUDES = [
     "PyQt5.QtNfc", "PyQt5.QtPositioning", "PyQt5.QtLocation", "PyQt5.QtSensors",
     "PyQt5.QtSerialPort", "PyQt5.QtWebSockets", "PyQt5.QtTest", "PyQt5.QtDesigner",
     "PyQt5.QtHelp", "PyQt5.QtSql", "PyQt5.QtXmlPatterns", "PyQt5.QtOpenGL",
-    "PyQt5.QtSvg", "PyQt5.QtPrintSupport", "PyQt5.QtNetwork",
+    "PyQt5.QtSvg", "PyQt5.QtPrintSupport",
     "PySide2", "PySide6", "wx", "gi",
     "IPython", "jupyter", "notebook", "pytest", "PyInstaller",
 ]

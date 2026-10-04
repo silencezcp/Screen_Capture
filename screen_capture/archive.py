@@ -120,7 +120,7 @@ class DailyArchiver(threading.Thread):
     def __init__(self, root_provider, delete_originals: bool = True, on_event=None):
         super().__init__(name="daily-archiver", daemon=True)
         self._root_provider = root_provider      # 返回当前输出目录的可调用对象
-        self._delete = delete_originals
+        self._delete_originals = delete_originals   # 别叫 _delete：会覆盖 Thread._delete
         self._on_event = on_event or (lambda *_a, **_k: None)
         self._stop = threading.Event()
 
@@ -137,7 +137,7 @@ class DailyArchiver(threading.Thread):
         root = Path(self._root_provider())
         day = day or datetime.now().strftime("%Y-%m-%d")
         try:
-            results = archive_before(root, day, delete_originals=self._delete)
+            results = archive_before(root, day, delete_originals=self._delete_originals)
         except Exception as exc:  # pragma: no cover - 归档失败不影响截图
             logger.warning("自动归档失败：%s", exc)
             return []

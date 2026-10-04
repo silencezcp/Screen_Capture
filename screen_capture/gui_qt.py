@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -14,10 +16,13 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QEvent, QObject, QSettings, Qt, QTimer, QUrl, pyqtSignal
+from PyQt5.QtCore import (
+    QEvent, QObject, QProcess, QSettings, Qt, QTimer, QUrl, pyqtSignal,
+)
 from PyQt5.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QPainter, QPixmap,
 )
+from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 from PyQt5.QtWidgets import (
     QAbstractItemView, QAction, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
@@ -51,6 +56,23 @@ PRIMARY_HOVER = "#CE7F2E"
 PRIMARY_SOFT = "#FBEBD9"
 DARK_ACCENT = "#B06824"
 OK_COLOR = "#4F9D69"
+WARN_BG = "#FFF4E3"
+WARN_BORDER = "#E9C88A"
+WARN_TEXT = "#8A5A12"
+
+IPC_NAME = "ScreenCaptureTool.SingleInstance"
+
+
+def notify_running_instance(timeout_ms: int = 400) -> bool:
+    """已有实例在跑就把它叫出来，返回 True（调用方应直接退出）。"""
+    socket = QLocalSocket()
+    socket.connectToServer(IPC_NAME)
+    if not socket.waitForConnected(timeout_ms):
+        return False
+    socket.write(b"SHOW")
+    socket.waitForBytesWritten(timeout_ms)
+    socket.disconnectFromServer()
+    return True
 
 
 def _arrow_icon_path() -> str:
@@ -100,6 +122,11 @@ QComboBox::drop-down {{
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ width: 18px; background: transparent; border: none; }}
 QFrame#SubCard {{ background: {SURFACE_ALT}; border: 1px solid {BORDER}; border-radius: 11px; }}
 QLabel#SubTitle {{ font-weight: 600; color: {TEXT_SUB}; }}
+QFrame#Banner {{ background: {WARN_BG}; border: 1px solid {WARN_BORDER}; border-radius: 11px; }}
+QLabel#BannerText {{ color: {WARN_TEXT}; font-weight: 600; }}
+QPushButton#BannerFix {{ background: {PRIMARY}; color: #FFFFFF; border: none; border-radius: 9px; padding: 7px 14px; font-weight: 600; }}
+QPushButton#BannerFix:hover {{ background: {PRIMARY_HOVER}; }}
+QPushButton#BannerFix:disabled {{ background: #E6D8C4; color: #A99C8B; }}
 QComboBox QAbstractItemView {{ background: {SURFACE}; border: 1px solid {BORDER}; selection-background-color: {PRIMARY_SOFT}; selection-color: {TEXT}; outline: none; }}
 QTableWidget {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 11px; gridline-color: transparent; outline: none; }}
 QTableWidget::item {{ padding: 5px 6px; border-bottom: 1px solid #F4ECE0; }}
@@ -130,7 +157,7 @@ METHOD_CHOICES = [
 FORMAT_CHOICES = ["png", "jpg", "bmp", "webp"]
 QUICK_INTERVALS = [1, 2, 5, 10, 30, 60]
 # 版本 2 起默认保存目录改为「程序目录\ScreenCapture」，旧版本记录要重设一次
-SETTINGS_VERSION = 3
+SETTINGS_VERSION = 4
 
 
 def default_output_dir() -> Path:
@@ -188,6 +215,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("ScreenCaptureTool", "ScreenCapture")
         self.tray: QSystemTrayIcon | None = None
         self.archiver: DailyArchiver | None = None
+        self._server: QLocalServer | None = None
         self.monitoring = False          # 监听模式：窗口收起来了但截图继续
         self._tray_hint_shown = False
         self._quitting = False
@@ -200,6 +228,12 @@ class MainWindow(QMainWindow):
         self.archive_check.stateChanged.connect(lambda _v: self._on_archive_toggled())
         self._build_tray()
         self._start_archiver()
+        self._start_single_instance()
+        # 启动就检查权限：低权限环境下 WGC 一定被拒，直接给出醒目提示
+        if w.process_integrity() == "Low":
+            self.show_wgc_banner(
+                "当前程序以「低完整性权限」运行（所在目录带 Low 完整性标签），"
+                "Windows 会拒绝 WGC，截图可能包含压在上面的窗口。点右侧按钮可一键修复。")
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -218,6 +252,7 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
 
         outer.addLayout(self._build_header())
+        outer.addWidget(self._build_banner())
 
         body = QHBoxLayout()
         body.setSpacing(12)
@@ -250,6 +285,72 @@ class MainWindow(QMainWindow):
         self.status_pill = QLabel("就绪：请选择目标窗口并设置间隔时间", objectName="Status")
         row.addWidget(self.status_pill)
         return row
+
+    def _build_banner(self) -> QFrame:
+        """WGC 不可用时的醒目提示条（默认隐藏）。"""
+        frame = QFrame(objectName="Banner")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(12, 9, 12, 9)
+        layout.setSpacing(10)
+        self.banner_label = QLabel("", objectName="BannerText")
+        self.banner_label.setWordWrap(True)
+        self.banner_fix = QPushButton("复制到本机并重启（修复）", objectName="BannerFix")
+        self.banner_fix.clicked.connect(self._relocate_and_restart)
+        help_button = QPushButton("看说明")
+        help_button.clicked.connect(self._show_wgc_help)
+        ignore = QPushButton("忽略")
+        ignore.clicked.connect(lambda: frame.hide())
+        layout.addWidget(self.banner_label, 1)
+        layout.addWidget(self.banner_fix)
+        layout.addWidget(help_button)
+        layout.addWidget(ignore)
+        frame.hide()
+        self.banner = frame
+        return frame
+
+    def show_wgc_banner(self, message: str) -> None:
+        self.banner_label.setText("⚠ " + message)
+        self.banner_fix.setEnabled(bool(getattr(sys, "frozen", False)))
+        if not getattr(sys, "frozen", False):
+            self.banner_fix.setToolTip("源码运行时请直接把项目文件夹复制到普通目录（如桌面）再运行")
+        self.banner.show()
+
+    def _show_wgc_help(self) -> None:
+        QMessageBox.information(
+            self, "为什么 WGC 不可用",
+            "WGC（Windows Graphics Capture）能让程序截到「被其它窗口遮挡、在后台」的窗口自己的画面。\n\n"
+            "但如果程序所在目录带有「低完整性标签」（常见于沙箱、受限工作区、某些同步盘目录），"
+            "Windows 会把进程降级为低权限，只给 Medium 及以上权限的进程开放 WGC，"
+            "于是抓窗口时报 0x80070005 没有捕获权限，程序只能退回「屏幕区域」方式——"
+            "那样就会把压在目标窗口上面的窗口一起截进去。\n\n"
+            "解决办法（任一即可）：\n"
+            "1) 点提示条上的「复制到本机并重启」，程序会把自己复制到 %LOCALAPPDATA%\\ScreenCaptureTool 并启动；\n"
+            "2) 手动把整个程序文件夹复制到桌面 / 文档 / D:\\Tools 这类普通目录再运行；\n"
+            "3) 以管理员身份运行「修复WGC权限(管理员).bat」，把当前目录的完整性标签改回 Medium。",
+        )
+
+    def _relocate_and_restart(self) -> None:
+        """把程序复制到普通目录（%LOCALAPPDATA%），在新位置启动后退出当前副本。"""
+        if not getattr(sys, "frozen", False):
+            QMessageBox.information(self, "从源码运行", "源码运行请直接把项目文件夹复制到普通目录后再运行。")
+            return
+        source = paths.app_dir()
+        target = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ScreenCaptureTool" / source.name
+        try:
+            shutil.copytree(source, target, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("logs", "ScreenCapture", "_archive", "*.log"))
+        except Exception as exc:
+            QMessageBox.critical(self, "复制失败", f"复制到 {target} 失败：\n{exc}\n\n"
+                                                   "可以手动把整个程序文件夹复制到桌面再运行。")
+            return
+        exe = target / Path(sys.executable).name
+        started = QProcess.startDetached(str(exe), [])
+        logger.info("已把程序复制到 %s 并启动新副本（启动成功=%s）", target, started)
+        QMessageBox.information(
+            self, "已复制到普通目录",
+            f"程序已复制到：\n{target}\n\n新副本已在那边启动（权限正常，WGC 可用），当前这份会退出。\n"
+            "以后直接用新位置（或桌面快捷方式）启动即可。")
+        self._quit_app()
 
     def _card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
         frame = QFrame(objectName="Card")
@@ -443,10 +544,11 @@ class MainWindow(QMainWindow):
             "把前一天的图片打包成 <输出目录>\\_archive\\YYYY-MM-DD.zip，节省磁盘空间")
         self.archive_delete_check = QCheckBox("归档后删除原图")
         self.archive_delete_check.setChecked(True)
-        self.monitor_check = QCheckBox("最小化后进入监听模式（截图继续）")
-        self.monitor_check.setChecked(True)
+        self.monitor_check = QCheckBox("最小化时收进托盘")
+        self.monitor_check.setChecked(False)
         self.monitor_check.setToolTip(
-            "窗口最小化时收进托盘继续截图，只有退出程序才会停止")
+            "不勾选（默认）：最小化后窗口留在任务栏，点任务栏就能回来，截图继续；\n"
+            "勾选：最小化后收进系统托盘，双击托盘图标恢复")
         self.tray_check = QCheckBox("点关闭按钮也收进托盘（不停止）")
         self.tray_check.setChecked(False)
         self.tray_check.setToolTip(
@@ -578,26 +680,29 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
 
     def _enter_monitoring(self) -> None:
-        """窗口最小化：进入监听模式，截图继续跑，只有退出程序才停止。"""
+        """窗口最小化：进入监听模式（截图继续），只有退出程序才停止。
+
+        默认**不**把窗口收进托盘——否则用户最小化后就找不到窗口了；
+        只有显式勾选「最小化时收进托盘」时才隐藏。
+        """
         if self.monitoring or self._quitting:
             return
         self.monitoring = True
         running = self.engine is not None and self.engine.running
-        logger.info("窗口已最小化：进入监听模式，%s（已保存 %s 张）",
+        logger.info("窗口已最小化：进入监听模式，%s（已保存 %s 张）；双击任务栏图标可恢复窗口",
                     "截图继续进行" if running else "尚未开始截图",
                     self.counts["saved"])
-        if not self.monitor_check.isChecked():
+        if not self.monitor_check.isChecked() or self.tray is None:
             return
-        if self.tray is not None:
-            self.hide()
-            if not self._tray_hint_shown:
-                self._tray_hint_shown = True
-                self.tray.showMessage(
-                    "已进入监听模式",
-                    ("截图会继续在后台执行。" if running else "窗口已收进托盘。")
-                    + "双击托盘图标恢复窗口；右键托盘可停止或退出。",
-                    QSystemTrayIcon.Information, 4000,
-                )
+        self.hide()
+        if not self._tray_hint_shown:
+            self._tray_hint_shown = True
+            self.tray.showMessage(
+                "已收进托盘，截图继续",
+                ("截图会继续在后台执行。" if running else "窗口已收进托盘。")
+                + "双击托盘图标恢复窗口；右键托盘可停止或退出。",
+                QSystemTrayIcon.Information, 4000,
+            )
 
     def _quit_app(self) -> None:
         self._quitting = True
@@ -635,6 +740,30 @@ class MainWindow(QMainWindow):
         else:
             self._stop_archiver()
             self.append_log("已关闭每日归档")
+
+    # ------------------------------------------------------------------
+    # 单实例：重复启动时把已有窗口叫出来
+    # ------------------------------------------------------------------
+    def _start_single_instance(self) -> None:
+        QLocalServer.removeServer(IPC_NAME)      # 清掉上次异常退出留下的占位
+        server = QLocalServer(self)
+        if server.listen(IPC_NAME):
+            server.newConnection.connect(self._on_ipc_connection)
+            self._server = server
+        else:
+            logger.warning("单实例监听失败：%s", server.errorString())
+
+    def _on_ipc_connection(self) -> None:
+        connection = self._server.nextPendingConnection() if self._server else None
+        if connection is None:
+            return
+        connection.readyRead.connect(lambda c=connection: self._on_ipc_message(c))
+        connection.disconnected.connect(connection.deleteLater)
+
+    def _on_ipc_message(self, connection) -> None:
+        connection.readAll()
+        logger.info("检测到重复启动：把已有窗口显示出来")
+        self._restore_window()
 
     # ------------------------------------------------------------------
     # 日志
@@ -924,6 +1053,12 @@ class MainWindow(QMainWindow):
         elif kind == "error":
             if event.get("fatal"):
                 QMessageBox.critical(self, "截图失败", event["message"])
+        elif kind == "warning":
+            self.append_log(event["message"])
+            if "WGC" in event["message"]:
+                self.show_wgc_banner(
+                    "WGC 不可用，截图已退回「屏幕区域」方式：被遮挡时会截到压在上面的窗口。"
+                    "点右侧按钮可一键修复（把程序复制到普通目录）。")
         elif kind == "finished":
             self.set_idle()
             self.status_pill.setText(
@@ -1028,8 +1163,8 @@ class MainWindow(QMainWindow):
         self.activate_check.setChecked(s.value("activate", True, type=bool))
         self.archive_check.setChecked(s.value("archive", True, type=bool))
         self.archive_delete_check.setChecked(s.value("archive_delete", True, type=bool))
-        # 新版默认：最小化就进监听模式；点 × 直接退出（停止截图）
-        self.monitor_check.setChecked(True if fresh else s.value("monitor", True, type=bool))
+        # 新版默认：最小化留在任务栏（方便找回）；点 × 直接退出（停止截图）
+        self.monitor_check.setChecked(False if fresh else s.value("monitor", False, type=bool))
         self.tray_check.setChecked(False if fresh else s.value("tray", False, type=bool))
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
@@ -1091,6 +1226,9 @@ def launch() -> int:
     app.setApplicationName("应用窗口定时截图工具")
     app.setStyle("Fusion")
     app.setStyleSheet(QSS)
+    # 已经有实例在跑（比如最小化到托盘后找不到窗口）：把它叫出来，自己直接退出
+    if notify_running_instance():
+        return 0
     window = MainWindow()
     window.show()
     return app.exec_()

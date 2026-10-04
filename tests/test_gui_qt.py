@@ -22,7 +22,9 @@ from PIL import Image  # noqa: E402
 
 from screen_capture import applog, win32 as w  # noqa: E402
 from screen_capture.engine import ConfigError, TARGET_SCREEN  # noqa: E402
-from screen_capture.gui_qt import METHOD_CHOICES, MainWindow, QSS  # noqa: E402
+from screen_capture.gui_qt import (  # noqa: E402
+    METHOD_CHOICES, SETTINGS_VERSION, MainWindow, QSS,
+)
 
 OUT_DIR = ROOT / "_test_out" / "qt"
 
@@ -37,8 +39,12 @@ class QtUiTests(unittest.TestCase):
         # 把界面设置里的保存目录指到测试目录，避免测试影响真实截图
         from PyQt5.QtCore import QSettings
         settings = QSettings("ScreenCaptureTool", "ScreenCapture")
+        settings.clear()
+        settings.setValue("settings_version", SETTINGS_VERSION)
         settings.setValue("output", str(OUT_DIR / "default"))
-        settings.setValue("settings_version", 2)
+        settings.setValue("monitor", False)      # 最小化留在任务栏（默认）
+        settings.setValue("tray", False)
+        settings.setValue("archive", True)
         settings.sync()
 
     def setUp(self):
@@ -83,7 +89,8 @@ class QtUiTests(unittest.TestCase):
         self.win.interval_spin.setValue(0.4)
         self.win.count_spin.setValue(4)
         self.win.subdir_check.setChecked(False)
-        self.assertTrue(self.win.monitor_check.isChecked(), "默认应当在最小化时进入监听模式")
+        self.assertFalse(self.win.monitor_check.isChecked(),
+                         "默认不勾选：最小化后窗口应留在任务栏，方便找回")
         self.win.on_start()
 
         self.pump(0.8)
