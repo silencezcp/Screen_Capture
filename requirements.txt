@@ -1,0 +1,4 @@
+# 运行库依赖：截图与窗口操作只用 Pillow；界面用 PyQt5；窗口捕获用 wgc_python（Windows Graphics Capture）
+Pillow>=9.1.0
+PyQt5>=5.15
+wgc_python>=2.0

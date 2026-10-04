@@ -1,0 +1,27 @@
+# ---- 构建产物 / 依赖（体积大，不入库）----
+build/
+dist/
+.packages/
+.tools/
+wheels/
+.venv/
+venv/
+
+# ---- 运行时产生的目录 ----
+# ScreenCapture 是默认截图保存目录，里面是个人截图，绝不入库
+ScreenCapture/
+screenshots/
+logs/
+_test_out/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ---- 系统 / 编辑器 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
