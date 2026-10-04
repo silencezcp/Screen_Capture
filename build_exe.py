@@ -30,8 +30,8 @@ ASSETS = ROOT / "assets"
 # （dist 里的程序正在运行时文件会被占用，这时就用它换个目录打包）
 DIST = Path(os.environ.get("SCREEN_CAPTURE_DIST") or (ROOT / "dist"))
 BUILD = ROOT / "build"
-VERSION = (1, 0, 2, 0)
-VERSION_TEXT = "1.0.2.0"
+VERSION = (1, 0, 3, 0)
+VERSION_TEXT = "1.0.3.0"
 
 GUI_NAME = "应用窗口定时截图工具"
 CLI_NAME = "应用窗口定时截图工具-命令行"
