@@ -15,6 +15,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from PyQt5.QtCore import (
     QEvent, QObject, QProcess, QSettings, Qt, QTimer, QUrl, pyqtSignal,
@@ -74,6 +75,53 @@ def instance_name() -> str:
         user = "user"
     digest = hashlib.md5(user.encode("utf-8", "replace")).hexdigest()[:8]
     return f"ScreenCaptureTool.{digest}.s{w.current_session_id()}"
+
+
+def settings_path() -> Path:
+    """界面配置文件位置。
+
+    默认 ``C:\\Users\\<用户名>\\.Screen_Capture\\settings.ini``（每个用户一份，不写注册表）。
+    可用环境变量 ``SCREEN_CAPTURE_SETTINGS_FILE`` 指定别处（测试、服务器统一下发配置）；
+    程序目录里放 ``settings.portable`` 时改用同目录的 ``settings.ini``（多人共用一份配置）。
+    """
+    env = os.environ.get("SCREEN_CAPTURE_SETTINGS_FILE", "").strip()
+    if env:
+        return Path(env)
+    if (paths.app_dir() / "settings.portable").exists():
+        return paths.app_dir() / "settings.ini"
+    return paths.settings_file()
+
+
+def make_settings() -> QSettings:
+    """界面的配置读写：INI 文件（不再使用注册表）。"""
+    target = settings_path()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:  # pragma: no cover - 极端只读环境
+        pass
+    settings = QSettings(str(target), QSettings.IniFormat)
+    if hasattr(settings, "setIniCodec"):
+        # Qt5 默认会把中文转义成 \xHH，写 UTF-8 才能用记事本直接看/改
+        settings.setIniCodec("UTF-8")
+    return settings
+
+
+def migrate_registry_settings(settings: QSettings) -> int:
+    """把旧版本存在注册表里的设置搬到配置文件（只读注册表，只做一次）。
+
+    只读取、不写入注册表；配置里已有的项不覆盖。
+    """
+    if settings.value("migrated_from_registry", False, type=bool):
+        return 0
+    legacy = QSettings("ScreenCaptureTool", "ScreenCapture")
+    moved = 0
+    for key in legacy.allKeys():
+        if not settings.contains(key):
+            settings.setValue(key, legacy.value(key))
+            moved += 1
+    settings.setValue("migrated_from_registry", True)
+    settings.sync()
+    return moved
 
 
 def notify_running_instance(timeout_ms: int = 400) -> bool:
@@ -242,7 +290,10 @@ class MainWindow(QMainWindow):
         self.counts = {"saved": 0, "skipped": 0}
         self.started_at: float | None = None
         self.preview_path: Path | None = None
-        self.settings = QSettings("ScreenCaptureTool", "ScreenCapture")
+        self.settings = make_settings()
+        moved = migrate_registry_settings(self.settings)
+        logger.info("配置文件：%s%s", settings_path(),
+                    f"（已从注册表迁移 {moved} 项旧设置）" if moved else "")
         self.tray: QSystemTrayIcon | None = None
         self.archiver: DailyArchiver | None = None
         self._server: QLocalServer | None = None

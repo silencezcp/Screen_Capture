@@ -14,12 +14,16 @@ import sys
 from pathlib import Path
 
 __all__ = ["app_dir", "resource_dir", "is_writable", "default_capture_dir", "default_log_dir",
-           "multi_user_mode", "user_data_dir", "MULTI_USER_MARKER"]
+           "multi_user_mode", "user_data_dir", "MULTI_USER_MARKER",
+           "user_config_dir", "settings_file"]
 
 CAPTURE_DIR_NAME = "ScreenCapture"
 # 这个文件由「安装到所有用户」脚本放在程序目录里：表示程序被多个用户共用，
 # 日志与默认截图目录必须按用户分开，否则多人同时写同一个日志文件会互相打架。
 MULTI_USER_MARKER = "multi_user.txt"
+# 每个用户的配置目录：C:\Users\<用户名>\.Screen_Capture
+CONFIG_DIR_NAME = ".Screen_Capture"
+SETTINGS_FILE_NAME = "settings.ini"
 
 
 def app_dir() -> Path:
@@ -63,6 +67,28 @@ def user_data_dir() -> Path:
     path = _local_appdata() / "ScreenCaptureTool"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def user_config_dir() -> Path:
+    """当前用户的配置目录：``C:\\Users\\<用户名>\\.Screen_Capture``。
+
+    放在用户主目录下的隐藏风格目录里（而不是注册表、也不是程序目录），好处：
+    * 每个用户各自一份配置 —— 服务器上多人共用同一份程序时互不干扰；
+    * 便携：拷贝这个目录就能带走/搬移全部设置；
+    * 程序目录只读（ProgramData 安装）时也能正常保存设置。
+    """
+    base = os.environ.get("USERPROFILE") or str(Path.home())
+    path = Path(base) / CONFIG_DIR_NAME
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except Exception:  # pragma: no cover - 极端只读环境
+        pass
+    return path
+
+
+def settings_file() -> Path:
+    """界面设置文件：``C:\\Users\\<用户名>\\.Screen_Capture\\settings.ini``。"""
+    return user_config_dir() / SETTINGS_FILE_NAME
 
 
 def multi_user_mode() -> bool:

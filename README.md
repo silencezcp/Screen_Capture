@@ -280,6 +280,30 @@ python run.py --selftest                      :: 环境自检（含 WGC / PyQt5�
 
 文件名模板占位符：`{app}` `{date}` `{time}` `{datetime}` `{index}`（`{index:04d}` 补零）`{hwnd}` `{ms}`。
 
+**界面设置存在哪**：**不存在注册表，而是一个配置文件**——
+
+```
+C:\Users\<用户名>\.Screen_Capture\settings.ini
+```
+
+INI 文本格式、UTF-8 编码，可以直接用记事本打开看和改（改完重启程序生效）：
+
+```ini
+[General]
+output=C:/Screenshots
+interval=5
+folder_mode=app
+```
+
+* 每个用户各自一份 —— 服务器上多人共用同一份程序时互不干扰；
+  拷贝这个文件就能带走/迁移全部设置；
+* 程序目录只读（如装在 `C:\ProgramData`）时也能正常保存设置；
+* **旧版本**（≤ v1.0.6）的设置存在注册表 `HKCU\Software\ScreenCaptureTool\ScreenCapture`，
+  首次运行新版会**自动迁移**到上面这个文件（只读注册表，只做一次，不会丢配置）；
+  确认迁移完成后可以删掉旧键：`reg delete "HKCU\Software\ScreenCaptureTool" /f`；
+* 想换位置：环境变量 `SCREEN_CAPTURE_SETTINGS_FILE=<路径>`；
+  想让整机共用一个配置：在程序目录放个空文件 `settings.portable`，就会改用程序目录下的 `settings.ini`。
+
 ## 6. 打包成 exe
 
 ```bat

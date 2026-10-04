@@ -27,6 +27,8 @@ from screen_capture.gui_qt import (  # noqa: E402
 )
 
 OUT_DIR = ROOT / "_test_out" / "qt"
+# 界面设置写到独立的 ini 文件，绝不碰用户真实的注册表配置
+SETTINGS_FILE = OUT_DIR / "settings.ini"
 
 
 class QtUiTests(unittest.TestCase):
@@ -36,9 +38,9 @@ class QtUiTests(unittest.TestCase):
         cls.app.setStyle("Fusion")
         cls.app.setStyleSheet(QSS)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        # 把界面设置里的保存目录指到测试目录，避免测试影响真实截图
+        os.environ["SCREEN_CAPTURE_SETTINGS_FILE"] = str(SETTINGS_FILE)
         from PyQt5.QtCore import QSettings
-        settings = QSettings("ScreenCaptureTool", "ScreenCapture")
+        settings = QSettings(str(SETTINGS_FILE), QSettings.IniFormat)
         settings.clear()
         settings.setValue("settings_version", SETTINGS_VERSION)
         settings.setValue("output", str(OUT_DIR / "default"))

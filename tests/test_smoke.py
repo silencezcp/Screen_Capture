@@ -318,6 +318,43 @@ class WgcCompatibilityTests(unittest.TestCase):
               f"原因={wgc.unavailable_reason() or '无（可用）'}")
 
 
+class SettingsLocationTests(unittest.TestCase):
+    """配置必须存在用户目录的 .Screen_Capture 下（不再写注册表）。"""
+
+    def test_settings_path_in_user_profile(self):
+        from screen_capture import paths
+
+        config_dir = paths.user_config_dir()
+        self.assertEqual(config_dir.name, ".Screen_Capture")
+        self.assertTrue(config_dir.exists(), "配置目录应当自动创建")
+        self.assertTrue(str(config_dir).lower().startswith(str(Path.home()).lower()),
+                        f"配置目录应在用户主目录下：{config_dir}")
+        self.assertEqual(paths.settings_file().name, "settings.ini")
+        self.assertEqual(paths.settings_file().parent, config_dir)
+        print(f"  [info] 配置文件位置：{paths.settings_file()}")
+
+    def test_settings_use_ini_file_not_registry(self):
+        import os as _os
+
+        from PyQt5.QtCore import QSettings
+
+        from screen_capture.gui_qt import make_settings, settings_path
+
+        target = Path(OUT_DIR) / "settings_check" / "settings.ini"
+        _os.environ["SCREEN_CAPTURE_SETTINGS_FILE"] = str(target)
+        try:
+            self.assertEqual(settings_path(), target)
+            settings = make_settings()
+            settings.setValue("probe", "ok")
+            settings.sync()
+            self.assertTrue(target.exists(), "设置应写入 ini 文件")
+            self.assertIn("[General]", target.read_text(encoding="utf-8"))
+            self.assertEqual(QSettings(str(target), QSettings.IniFormat).value("probe"), "ok")
+        finally:
+            _os.environ.pop("SCREEN_CAPTURE_SETTINGS_FILE", None)
+        print("  [info] 设置写入 ini 文件（不碰注册表）")
+
+
 class MultiUserTests(unittest.TestCase):
     """服务器 / 多人同时使用：路径按用户分开、单实例名按用户+会话区分。"""
 
