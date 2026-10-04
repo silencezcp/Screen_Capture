@@ -17,7 +17,7 @@
 
 | 平台 | 下载 |
 | --- | --- |
-| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.9/ScreenCaptureTool_v1.0.9_portable_win64.zip) |
+| **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.10/ScreenCaptureTool_v1.0.10_portable_win64.zip) |
 | GitHub（归档） | [⬇ ScreenCaptureTool_v1.0.4_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
 
 代码仓库同步在 [Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
@@ -152,6 +152,8 @@ python -m screen_capture
 「更多选项」单独成卡片，3 列排布：画面无变化时跳过保存、每次开始创建独立子目录、生成截图清单 CSV、
 只截客户区、画面包含鼠标光标、截图前把窗口切到前台、**每天 0 点自动压缩前一天的截图**、
 归档后删除原图、**最小化时收进托盘**、**点关闭按钮也收进托盘（不停止）**。
+
+**界面左上角显示版本号**（与 exe 版本、自检里的「程序版本」一致，唯一来源是 screen_capture/__init__.py 的 __version__）。
 
 **运行中改设置立即生效**：任务跑起来之后，直接改间隔、数量上限、最长时长、截图方式、图片格式/质量、
 文件名模板、保存目录、子目录方式、以及下面 6 个开关，都会**马上应用到正在运行的任务**，

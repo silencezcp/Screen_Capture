@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,8 +31,24 @@ ASSETS = ROOT / "assets"
 # （dist 里的程序正在运行时文件会被占用，这时就用它换个目录打包）
 DIST = Path(os.environ.get("SCREEN_CAPTURE_DIST") or (ROOT / "dist"))
 BUILD = ROOT / "build"
-VERSION = (1, 0, 9, 0)
-VERSION_TEXT = "1.0.9.0"
+def app_version() -> str:
+    """版本号唯一来源：screen_capture/__init__.py 里的 __version__。
+
+    （直接读文件、不 import，避免打包脚本被运行时依赖拖住。）
+    """
+    try:
+        text = (ROOT / "screen_capture" / "__init__.py").read_text(encoding="utf-8")
+        found = re.search(r'__version__\s*=\s*["'']([^"'']+)', text)
+        if found:
+            return found.group(1)
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+VERSION_TEXT = f"{app_version()}.0"
+_parts = [int(p) for p in re.findall(r"\d+", app_version())][:4]
+VERSION = tuple(_parts + [0] * (4 - len(_parts)))
 
 GUI_NAME = "应用窗口定时截图工具"
 CLI_NAME = "应用窗口定时截图工具-命令行"

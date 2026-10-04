@@ -32,6 +32,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from . import __version__ as APP_VERSION
 from . import applog
 from . import paths
 from . import win32 as w
@@ -164,6 +165,7 @@ QFrame#Card {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius:
 QLabel#CardTitle {{ font-size: 14px; font-weight: 600; color: {TEXT}; }}
 QLabel#Hint {{ color: {TEXT_SUB}; font-size: 12px; }}
 QLabel#AppTitle {{ font-size: 19px; font-weight: 700; color: {TEXT}; }}
+QLabel#AppVersion {{ color: {TEXT_SUB}; font-size: 12px; background: {SURFACE_ALT}; border: 1px solid {BORDER}; border-radius: 8px; padding: 2px 8px; }}
 QLabel#AppSub {{ color: {TEXT_SUB}; font-size: 12px; }}
 QLabel#Status {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 10px; padding: 7px 14px; color: {TEXT}; }}
 QLabel#Preview {{ background: {SURFACE_ALT}; border: 1px dashed {BORDER}; border-radius: 12px; color: {TEXT_SUB}; }}
@@ -292,7 +294,7 @@ class EventBridge(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("应用窗口定时截图工具")
+        self.setWindowTitle(f"应用窗口定时截图工具 v{APP_VERSION}")
         self.resize(1360, 960)
         self.setMinimumSize(1120, 780)
 
@@ -325,6 +327,7 @@ class MainWindow(QMainWindow):
         self.archive_check.stateChanged.connect(lambda _v: self._on_archive_toggled())
         self._build_tray()
         self._start_archiver()
+        logger.info("程序版本：v%s", APP_VERSION)
         self._start_single_instance()
         # 启动就检查权限：低权限环境下 WGC 一定被拒，直接给出醒目提示
         if w.process_integrity() == "Low":
@@ -418,11 +421,19 @@ class MainWindow(QMainWindow):
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
         title = QLabel("应用窗口定时截图工具", objectName="AppTitle")
+        # 版本号显示在左上角标题右侧（唯一来源：screen_capture.__version__，与 exe 版本一致）
+        self.version_label = QLabel(f"v{APP_VERSION}", objectName="AppVersion")
+        self.version_label.setToolTip(f"版本 {APP_VERSION}（配置文件与日志里也会记录）")
+        title_row.addWidget(title)
+        title_row.addWidget(self.version_label)
+        title_row.addStretch(1)
         sub = QLabel("选择窗口 · 自定义间隔 · WGC 后台捕获", objectName="AppSub")
         column = QVBoxLayout()
         column.setSpacing(2)
-        column.addWidget(title)
+        column.addLayout(title_row)
         column.addWidget(sub)
         row.addLayout(column)
         row.addStretch(1)

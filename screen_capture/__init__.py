@@ -23,7 +23,7 @@ from .engine import (
     sanitize_filename_part,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.0.10"   # 唯一来源：打包脚本与界面都读这里
 __all__ = [
     "CaptureConfig",
     "CaptureEngine",

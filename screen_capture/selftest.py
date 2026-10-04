@@ -125,6 +125,7 @@ def run_selftest(output_dir: Optional[str] = None) -> int:
             name += f" —— 不支持 WGC（需 build {wgc.WGC_MIN_BUILD}+），将自动使用 GDI 方式"
         return name
 
+    check("程序版本", lambda: __import__("screen_capture").__version__)
     check("DPI 感知", lambda: w.enable_dpi_awareness())
     check("系统版本", os_info)
     check("运行权限", lambda: f"完整性级别 {w.process_integrity()}"

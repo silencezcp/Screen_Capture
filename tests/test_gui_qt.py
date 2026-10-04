@@ -233,6 +233,19 @@ class QtUiTests(unittest.TestCase):
         self.assertNotEqual(disabled, "#ffffff", "禁用态不应该是白底")
         print(f"  [info] 质量框：启用态 {enabled} / 禁用态 {disabled}（肉眼可区分）")
 
+    def test_version_shown_top_left(self):
+        """左上角标题旁必须显示版本号，且与包版本一致。"""
+        from screen_capture import __version__
+
+        self.win.show()
+        self.pump(0.2)
+        self.assertEqual(self.win.version_label.text(), f"v{__version__}")
+        self.assertIn(__version__, self.win.windowTitle())
+        self.assertTrue(self.win.version_label.isVisible())
+        # 版本徽标应该在标题的右侧、整个头部的最左边一列
+        self.assertLess(self.win.version_label.x(), self.win.status_pill.x())
+        print(f"  [info] 左上角显示版本：{self.win.version_label.text()}（窗口标题：{self.win.windowTitle()}）")
+
     def test_new_options_and_arrow(self):
         """更多选项要齐全，下拉框要有箭头图片。"""
         from screen_capture.gui_qt import _ARROW, _ARROW_RULE
