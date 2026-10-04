@@ -240,6 +240,18 @@ python build_exe.py --onefile    :: 单文件版
 并在桌面创建「应用窗口定时截图工具」快捷方式**（桌面路径按系统设置走，OneDrive 重定向也能识别）。
 随时可以双击 `安装到本机.bat` 重新部署 + 重建快捷方式。
 
+**发布 portable 便携包到两端（一条命令）**：
+
+```bat
+python sync_release.py --version 1.0.5 --notes "本次更新说明"
+python sync_release.py --version 1.0.5 --check      :: 只检查令牌与打包源，不上传
+```
+
+它会：把 `dist\应用窗口定时截图工具` 打包成 `ScreenCaptureTool_v1.0.5_portable_win64.zip` →
+打标签并推送 `main` + 标签到 GitHub/Gitee → 在两端建发行版并上传附件 → 打印下载地址与 SHA256。
+GitHub 令牌取自 Windows 凭据管理器（不落盘）；Gitee 令牌取自环境变量 `GITEE_TOKEN`
+或 `.tools\gitee_token.txt`（`.tools/` 已 gitignore，不会入库）。
+
 > ⚠ **为什么必须部署？** 在受限环境里（例如本机的 DSH 工作区 `D:\DSH_Workspaces\...`），
 > 目录本身带 **Low 完整性标签**，从这里写出来的 exe 会继承 Low；而普通用户进程是 Medium，
 > Windows 不允许把标签再提回 Medium（提标签需要管理员特权）。于是 exe 一启动就是**低权限**，
@@ -264,6 +276,7 @@ Screen_Capture/
 ├─ 安装到本机.bat                把打包结果部署到 %LOCALAPPDATA%，并建桌面快捷方式
 ├─ 修复WGC权限(管理员).bat        把程序目录的完整性标签改回 Medium（需管理员），修复 WGC
 ├─ build_exe.py / 打包EXE.bat    打包脚本（打完自动部署 + 建桌面快捷方式）
+├─ sync_release.py              把 portable 便携包同步发布到 GitHub + Gitee
 ├─ packages/                    本项目依赖的第三方包（约 196 MB，不入库）
 ├─ requirements.txt
 ├─ assets/                      图标（奶白+焦糖相机）与生成脚本
