@@ -18,11 +18,10 @@
 | 平台 | 下载 |
 | --- | --- |
 | **Gitee（推荐）** | [⬇ ScreenCaptureTool_v1.0.6_portable_win64.zip](https://gitee.com/silence95/Screen_Capture/releases/download/v1.0.10/ScreenCaptureTool_v1.0.10_portable_win64.zip) |
-| GitHub（归档） | [⬇ ScreenCaptureTool_v1.0.4_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.4/ScreenCaptureTool_v1.0.4_portable_win64.zip) |
+| **GitHub** | [⬇ ScreenCaptureTool_v1.0.10_portable_win64.zip](https://github.com/silencezcp/Screen_Capture/releases/download/v1.0.10/ScreenCaptureTool_v1.0.10_portable_win64.zip) |
 
-代码仓库同步在 [Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
-[GitCode](https://gitcode.com/qq_24919633/Screen_Capture)、
-[GitHub](https://github.com/silencezcp/Screen_Capture)（归档）。
+代码与标签同步在三处：[Gitee](https://gitee.com/silence95/Screen_Capture)（主仓库）、
+[GitCode](https://gitcode.com/qq_24919633/Screen_Capture)、[GitHub](https://github.com/silencezcp/Screen_Capture)。
 便携包附件发布在 Gitee 发行版（GitCode 的 API 不支持上传附件，只能在其网页上手动上传）。
 
 约 70 MB —— 解压到任意**普通目录**（桌面 / 文档 / `D:\Tools`），双击
@@ -36,7 +35,7 @@
 >   [GitHub Releases](https://github.com/silencezcp/Screen_Capture/releases)。
 
 > **仓库同步**：主仓库在 **Gitee**，GitCode 与 GitHub 为镜像，代码与标签保持一致。
-> 日常推送只走 Gitee + GitCode（`git push origin main` 一条命令推两个平台）。
+> 日常 `git push origin main` 一条命令推 Gitee + GitCode；需要时 `git push github main` 再推一次 GitHub。
 
 ## 系统兼容性（含 Windows Server）
 
