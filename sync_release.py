@@ -80,8 +80,39 @@ def gitcode_token() -> str:
     return ""
 
 
-def make_bundle(version: str) -> Path:
-    """把 portable 目录打成 zip。"""
+def dist_version() -> str:
+    """读取 dist / 本机部署版 exe 的实际版本号（用于防止版本错配）。"""
+    candidates = [
+        ROOT / "dist" / APP_FOLDER / f"{APP_FOLDER}.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "ScreenCaptureTool" / "app" / f"{APP_FOLDER}.exe",
+    ]
+    exe = next((p for p in candidates if p.exists()), None)
+    if exe is None:
+        return ""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-Item -LiteralPath '{exe}').VersionInfo.FileVersion"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        return (result.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def make_bundle(version: str, force: bool = False) -> Path:
+    """把 portable 目录打成 zip。
+
+    ⚠ 包里装的是**当前 dist 的构建**：如果 dist 里的版本号与要发布的版本不一致，
+    就会把新版本的内容当旧版本上传（踩过：v1.0.7/8/9 的附件全是 v1.0.10 的内容），
+    所以默认直接中止，确认要发才加 --force。
+    """
+    actual = dist_version()
+    if actual and not actual.startswith(version):
+        log(f"  ⚠ dist 里的程序版本是 {actual}，与要发布的 v{version} 不一致！")
+        log(f"     继续下去会把当前版本的内容当成 v{version} 上传。")
+        if not force:
+            raise SystemExit("版本不一致，已中止（确认要发请加 --force）")
+        log("     --force 已指定，继续。")
     sources = [ROOT / "dist" / APP_FOLDER, Path(os.environ.get("LOCALAPPDATA", "")) / "ScreenCaptureTool" / "app"]
     source = next((p for p in sources if (p / f"{APP_FOLDER}.exe").exists()), None)
     if source is None:
@@ -236,6 +267,8 @@ def main(argv=None) -> int:
     parser.add_argument("--version", required=True, help="版本号，如 1.0.5（会自动加 v 前缀打标签）")
     parser.add_argument("--notes", default="", help="发行说明；留空则用默认说明")
     parser.add_argument("--check", action="store_true", help="只检查打包源与令牌，不上传")
+    parser.add_argument("--force", action="store_true",
+                        help="即使 dist 版本号与 --version 不一致也继续打包上传")
     parser.add_argument("--no-push", action="store_true", help="不推送 git（只发发行版）")
     parser.add_argument("--github", action="store_true",
                         help="同时也发布到 GitHub（默认只发 Gitee）")
@@ -252,7 +285,7 @@ def main(argv=None) -> int:
         log(f"  GitHub 令牌：{'已获取' if gh_token else '缺失（git 凭据管理器里没有 github.com）'}")
     log(f"  Gitee   令牌：{'已获取' if gt_token else '缺失（设置 GITEE_TOKEN 或 .tools/gitee_token.txt）'}")
     log(f"  GitCode 令牌：{'已获取' if gc_token else '缺失（设置 GITCODE_TOKEN 或 .tools/gitcode_token.txt）'}")
-    bundle = make_bundle(version)
+    bundle = make_bundle(version, force=args.force)
     digest = sha256(bundle.read_bytes()).hexdigest().upper()
     log(f"  便携包：{bundle.name}  {bundle.stat().st_size / 1024 / 1024:.1f} MB")
     log(f"  SHA256：{digest}")
