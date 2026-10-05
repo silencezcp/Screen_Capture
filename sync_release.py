@@ -116,7 +116,24 @@ def http_get_json(url: str, headers: dict | None = None) -> object:
         return json.loads(response.read().decode("utf-8") or "{}")
 
 
+def upload_github_asset(url: str, bundle: Path, headers: dict) -> dict:
+    """GitHub 的 release assets 接口要求把文件作为**原始请求体**发送。
+
+    ⚠ 踩过的坑：如果像 Gitee 那样按 multipart 拼表单，GitHub 会把整个
+    multipart 请求体原样存成附件 —— 附件比原文件多出约 199 字节
+    （boundary + 头部 + 结尾），文件头变成 ----（不是 PK），下载回来是坏包。
+    GitHub 的 API 会返回该附件的 digest（sha256），可用来校验。
+    """
+    request = urllib.request.Request(
+        url, data=bundle.read_bytes(), method="POST",
+        headers={"Content-Type": "application/zip",
+                 "User-Agent": "screen-capture-release", **headers})
+    with urllib.request.urlopen(request, timeout=1800) as response:
+        return json.loads(response.read().decode("utf-8") or "{}")
+
+
 def upload_asset(url: str, bundle: Path, headers: dict) -> None:
+    """Gitee / GitCode 的 attach_files：multipart 表单，字段名 file。"""
     boundary = "----screen-capture-release"
     head = (f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="{bundle.name}"\r\n'
@@ -150,8 +167,16 @@ def publish_github(version: str, tag: str, bundle: Path, notes: str, token: str)
     if bundle.name in existing:
         log("  GitHub 附件已存在，跳过上传")
     else:
-        upload_asset((release["upload_url"].split("{")[0]) + f"?name={bundle.name}", bundle, headers)
-        log("  GitHub 附件已上传")
+        asset = upload_github_asset((release["upload_url"].split("{")[0]) + f"?name={bundle.name}",
+                                    bundle, headers)
+        expect = sha256(bundle.read_bytes()).hexdigest()
+        digest = str(asset.get("digest") or "").replace("sha256:", "")
+        if digest and digest != expect:
+            log(f"  ⚠ GitHub 附件校验不一致：远端 {digest[:12]}… / 本地 {expect[:12]}…")
+        elif digest:
+            log(f"  GitHub 附件已上传，sha256 校验通过（{digest[:12]}…）")
+        else:
+            log("  GitHub 附件已上传（接口未返回 digest，未能校验）")
     return f"https://github.com/{GH_REPO}/releases/download/{tag}/{bundle.name}"
 
 
