@@ -1,12 +1,13 @@
 @echo off
 chcp 936 >nul
-rem 双击启动「应用窗口定时截图工具」（PyQt5 界面，从源码运行）
+rem 双击启动「应用窗口定时截图工具」（PyQt6 界面）
 rem 会依次尝试：项目内 .venv -> py -3 -> python -> DSH 运行库自带 Python
 setlocal
 cd /d "%~dp0"
 
-rem 依赖装在项目内的 packages 目录时，让 Python 能找到 PyQt5 / wgc_python
+rem 依赖装在项目内的 packages 目录时，让 Python 能找到 numpy / wgc_python
 if exist "%~dp0packages\PyQt5" set "PYTHONPATH=%~dp0packages"
+if exist "%~dp0packages\PyQt6" set "PYTHONPATH=%~dp0packages"
 
 set "PYEXE="
 if exist "%~dp0.venv\Scripts\pythonw.exe" set "PYEXE=%~dp0.venv\Scripts\pythonw.exe"

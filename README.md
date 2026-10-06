@@ -1,11 +1,11 @@
 # 应用窗口定时截图工具（Python / Windows）
 
 选择一个正在运行的应用窗口（或整个屏幕），按你手动设置的**间隔时间**自动反复截图。
-界面用 **PyQt5** 写成奶白色现代风格，日志实时写入本地文件。
+界面用 **PyQt6** 写成奶白色现代风格，日志实时写入本地文件。
 
 * **WGC 窗口捕获**：基于 Windows Graphics Capture，窗口被遮挡、在后台也能截到**窗口自己的画面**，
   不会再出现「截到应用所在区域、里面全是压在上面的其它窗口」这种问题
-* 界面 **PyQt5**（奶白 + 焦糖配色）；tkinter 版保留作后备
+* 界面 **PyQt6**（奶白 + 焦糖配色）；tkinter 版保留作后备
 * 截图循环跑在后台线程，界面不卡；可随时停止；支持「试截一张」先看效果
 * 输出文件命名、格式、目录都可自定义，自动生成 CSV 清单；**运行日志实时落盘**
 
@@ -63,7 +63,7 @@
 其他注意点：
 * 需要装 **桌面体验**（Desktop Experience）；**Server Core** 没有图形界面，界面版跑不起来；
 * 通过 **RDP 断开的会话**运行时，桌面可能不渲染，截图会发黑 —— 保持会话连接或使用控制台会话；
-* PyQt5 界面依赖系统里的常用字体，Server 上若字体缺失界面会难看但功能不受影响。
+* Qt 界面依赖系统里的常用字体，Server 上若字体缺失界面会难看但功能不受影响。
 
 ## 服务器 / 多人同时使用（RDS 远程桌面）
 
@@ -101,7 +101,7 @@
 | --- | --- |
 | 系统 | Windows 10 1903+ / Windows 11（WGC 要求 1903+；光标捕获要求 2004+） |
 | Python | 3.9 及以上 |
-| 依赖 | `Pillow`、`PyQt5`、`wgc_python`（自动带上 numpy） |
+| 依赖 | `Pillow`、`PyQt6`、`wgc_python`（自动带上 numpy 与 opencv） |
 
 ```bat
 pip install -r requirements.txt
@@ -112,21 +112,35 @@ pip install -r requirements.txt
 > 所以在这台机器上**不用再 pip 安装**就能直接跑/打包。换机器时把 `packages\` 一起拷过去即可；
 > 想自己装就按下面的 requirements 走。
 
-`requirements.txt` 里三条：
+> 注意：`packages\` 里那份是给 Python 3.12 用的 PyQt5，本项目的界面已升级为 **PyQt6**，
+> 所以现在请按下面的 requirements 装 PyQt6（Python 3.13/3.14 环境推荐）。`packages\` 里的
+> numpy / wgc_python / PyInstaller 仍然可以复用。
+
+`requirements.txt` 里几条：
 
 ```
 Pillow>=9.1.0
-PyQt5>=5.15
+PyQt6>=6.4
 wgc_python>=2.0
 ```
+
+**装依赖（国内推荐用镜像，快很多）**：
+
+```bat
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+:: 或
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+```
+
+> 清华镜像偶尔会对脚本式请求返回 403，换成阿里云镜像即可；两个都用不了时去掉 `-i` 走官方源。
 
 ## 2. 启动
 
 ```bat
-双击  启动截图工具.bat            :: 从源码运行（PyQt5 界面）
+双击  启动截图工具.bat            :: 从源码运行（PyQt6 界面）
 双击  启动截图工具-免提示.bat      :: 直接启动打包好的 exe，不弹 SmartScreen
-python run.py                 :: 默认 PyQt5 界面
-python run.py --ui tk         :: 改用旧的 tkinter 界面（PyQt5 装不上时也会自动退回）
+python run.py                 :: 默认 PyQt6 界面
+python run.py --ui tk         :: 改用旧的 tkinter 界面（PyQt6 装不上时也会自动退回）
 python -m screen_capture
 ```
 
@@ -226,7 +240,7 @@ python run.py --list                          :: 列出可见窗口
 python run.py --cli --title 记事本 --interval 2 --count 5 --out D:\shots
 python run.py --cli --index 3 --interval 0.5 --duration 10 --out D:\shots --method wgc
 python run.py --cli --screen --interval 60 --count 3 --skip-unchanged --out D:\shots
-python run.py --selftest                      :: 环境自检（含 WGC / PyQt5）
+python run.py --selftest                      :: 环境自检（含 WGC / Qt / 录屏）
 ```
 
 | 参数 | 说明 |
@@ -252,7 +266,77 @@ python run.py --selftest                      :: 环境自检（含 WGC / PyQt5�
 | `--ui qt\|tk` | 界面实现 |
 | `--selftest [目录]` | 自检并输出报告 |
 
-## 5. 日志与输出文件
+## 5. 屏幕录制（可调画质）
+
+除定时截图外，本程序还能把**整个屏幕 / 指定窗口**录成 MP4，并且**画质可以随时调节**。
+
+```bat
+:: 命令行录制：整个屏幕，1080p / 30fps / 高清晰度，录 10 秒
+python run.py --record --screen --record-resolution 1080p --record-fps 30 ^
+              --record-quality high --record-duration 10 --out D:\videos
+
+:: 录某个窗口，60fps 原画（不缩放），指定码率 20 Mbps
+python run.py --record --title 记事本 --record-resolution native --record-fps 60 ^
+              --record-bitrate 20000 --record-duration 30 --out D:\videos
+
+:: 文件最小：480p / 15fps / 低清晰度
+python run.py --record --screen --record-resolution 480p --record-fps 15 ^
+              --record-quality low --record-duration 60 --out D:\videos
+```
+
+界面上：点击底部 **「● 录屏…」** 打开录屏窗口（PyQt6，会沿用你当前选中的窗口和保存目录），
+里面有画质预设下拉框和逐项参数，以及录制中的实时状态（时长、实际帧率、文件大小、码率）。
+托盘菜单里也有「录屏…」入口。
+
+| 参数 | 说明 |
+| --- | --- |
+| `--record` | 进入录屏模式 |
+| `--record-duration 秒` | 录制时长，默认 10 |
+| `--record-resolution native\|2160p\|1440p\|1080p\|720p\|480p\|360p` | **分辨率档位**，默认 1080p；`native` = 原始分辨率（不缩放） |
+| `--record-fps 1~120` | **帧率**，默认 30（60 更顺滑、文件更大） |
+| `--record-quality low\|standard\|high\|ultra` | **清晰度档位**，默认 `high`，决定自动码率系数（0.07 / 0.12 / 0.20 / 0.32 比特每像素每帧） |
+| `--record-bitrate kbps` | **手动码率**；`0` 或不填 = 按分辨率 × 帧率 × 清晰度自动计算 |
+| `--record-profile high\|main\|baseline` | H.264 档位，默认 `high`（同码率下更清晰；老设备可用 `baseline`） |
+| `--record-input auto\|nv12` | 色彩转换方式：`auto` 交给系统（省 CPU，默认且最稳）/ `nv12` 程序自己转 |
+| `--record-scale quality\|fast` | 取帧方式：`quality`（默认，缩放更细腻）/ `fast`（更快，适合高帧率） |
+| `--record-pattern 模板` | 文件名模板，可用 `{app}` `{date}` `{time}` `{datetime}` `{resolution}` `{fps}` |
+
+**画质怎么调最划算**
+
+1. 先定 **分辨率**：这是体积和清晰度的主导因素。1080p ≈ 720p 的 2.25 倍像素。
+2. 再定 **帧率**：录讲课/演示 15~30fps 足够；录游戏/动画才需要 60fps。
+3. 最后看 **清晰度 / 码率**：同一分辨率下提高档位，画面细节（尤其是文字边缘、渐变）更好、文件更大。
+   想精确控制就取消勾选「自动」，直接填码率：`码率(kbps) ≈ 宽 × 高 × 帧率 × 0.1~0.3 ÷ 1000`
+   （例如 1920×1080×30×0.2÷1000 ≈ 12440 kbps ≈ 1.5 MB/秒）。
+4. 界面里会实时显示 **预计码率与每分钟体积**，录制中会显示**实测平均码率**，方便对照。
+
+**实现说明**
+
+* 编码使用 **Windows 自带的 Media Foundation（H.264）**：不需要 ffmpeg、不需要 OpenCV，
+  也不需要额外安装任何编码器；输出标准 MP4（H.264/AVC，可用任意播放器播放）。
+  （实现方式是用 ctypes 直接调用 `mfplat.dll` / `mfreadwrite.dll` 的 `IMFSinkWriter`，
+  槽位表是逐项实测校验过的，启动时还会自动做一次读写自检。）
+* 取帧使用 GDI（`StretchBlt` 一次完成"截取 + 缩放"），编码本身很快（1080p 约 2ms/帧），
+  **瓶颈在 GDI 抓屏**。本机实测（2560×1440 单屏）的"取帧 + 编码"上限：
+
+  | 输出分辨率 | 高画质（默认） | 高帧率 |
+  | --- | --- | --- |
+  | 1920×1080 | ≈19 fps | ≈29 fps |
+  | 1280×720 | ≈29 fps | ≈45 fps |
+  | 854×480 | ≈30 fps | ≈52 fps |
+
+  所以要 60fps 请选 **720p 及以下 + 取帧方式=高帧率**，并把帧率设成 60；
+  设成高于实际上限的帧率不会出错，只是实际帧率到不了那个数（界面会显示实测帧率）。
+* 取帧方式（界面里的「取帧方式」/ 命令行 `--record-scale`）：
+  `quality`（默认，缩小时抗锯齿更好，文字更清晰）与 `fast`（更快，适合高帧率或低配机器）。
+* 支持录制鼠标光标；**窗口录制会自动跟随窗口位置和大小**，窗口尺寸变化导致输出分辨率
+  改变时会自动开新分段。
+* **录制中改分辨率 / 帧率 / 清晰度 / 码率会自动分段**：旧参数的部分先封盘，新参数写入
+  `..._part2.mp4`、`..._part3.mp4`……每段都是可独立播放的完整 MP4（不会丢前一段内容）。
+* 录制前会自动检测编码器可用性；不可用时会在界面和命令行给出明确提示，不会悄悄失败。
+* 屏幕内容静止时文件会非常小（H.264 只记录变化），这是正常现象；画面一动码率立刻上来。
+
+## 6. 日志与输出文件
 
 **日志**（实时写入，界面里也能看到同样的内容）：
 
@@ -314,7 +398,7 @@ folder_mode=app
 * 想换位置：环境变量 `SCREEN_CAPTURE_SETTINGS_FILE=<路径>`；
   想让整机共用一个配置：在程序目录放个空文件 `settings.portable`，就会改用程序目录下的 `settings.ini`。
 
-## 6. 打包成 exe
+## 7. 打包成 exe
 
 ```bat
 双击  打包EXE.bat
@@ -361,10 +445,26 @@ python sync_release.py --version 1.0.7 --github     :: 需要时同时发 GitHub
 * 默认打成**目录版**：不需要往 `%TEMP%` 解压，启动快，也不受临时目录权限影响；
 * `--onefile` 出的单文件版启动时会解压到 `%TEMP%`，如果那个目录不可写（权限受限、磁盘满、
   安全软件拦截），会报 `Could not create temporary directory`，此时用目录版即可；
-* PyQt5 的 Qt 运行库、wgc_python 的 DLL、numpy 都会一起打进去，所以体积比纯 tkinter 版大不少；
-* 打包后建议先自检：`dist\...命令行.exe --selftest`（9 项全通过说明截图、WGC、tkinter、PyQt5 都正常）。
+* 单文件版体积约 150 MB（PyQt6 的 Qt 运行库 + numpy + opencv 占大头）；想让体积更小就用目录版，
+  或把 `build_exe.py` 里 `QT_REQUIRED_DLLS` / `EXCLUDES` 再收一收；
+* **依赖没装齐时**：`打包EXE.bat` 会先调 `setup_env.py` 自检并自动用国内镜像补齐
+  （清华 → 阿里云 → 官方源），缺 PyQt6/Pillow/numpy/wgc_python/PyInstaller 都不用自己 pip；
+* 手动准备环境的两种方式：
 
-## 7. 项目结构
+  ```bat
+  python setup_env.py                  :: 建 .venv 并装齐（推荐，隔离干净）
+  python setup_env.py --no-venv        :: 直接装在当前 Python 里
+  python setup_env.py --no-venv --check :: 只检查缺什么
+  ```
+
+* conda / Anaconda 环境特别注意：Qt6 与 Pillow 的底层 DLL 放在 `Library\bin`、
+  `Library\lib\qt6\bin`，PyInstaller 默认找不到；`build_exe.py` 里已经有
+  `runtime_dlls()` 与 `qt_plugin_dirs()` 负责把它们按白名单打进去（否则 exe 一跑就
+  `DLL load failed while importing _imaging / QtWidgets`）；
+* 打包后建议先自检：`dist\...命令行.exe --selftest`（14 项全通过说明截图、WGC、tkinter、
+  PyQt6、录屏编码与录屏实拍都正常）。
+
+## 8. 项目结构
 
 ```
 Screen_Capture/
@@ -374,6 +474,7 @@ Screen_Capture/
 ├─ 安装到本机.bat                把打包结果部署到 %LOCALAPPDATA%，并建桌面快捷方式
 ├─ 修复WGC权限-需管理员.bat        把程序目录的完整性标签改回 Medium（需管理员），修复 WGC
 ├─ build_exe.py / 打包EXE.bat    打包脚本（打完自动部署 + 建桌面快捷方式）
+├─ setup_env.py                 一键检查/补齐依赖（缺什么用国内镜像自动装）
 ├─ sync_release.py              把 portable 便携包同步发布到 GitHub + Gitee
 ├─ packages/                    本项目依赖的第三方包（约 196 MB，不入库）
 ├─ requirements.txt
@@ -382,14 +483,22 @@ Screen_Capture/
 │  ├─ win32.py                  Win32 封装：窗口枚举/矩形/DPI/PrintWindow/BitBlt/窗口激活/探活
 │  ├─ capture_wgc.py            WGC 捕获后端（常驻会话、无视遮挡）
 │  ├─ engine.py                 截图引擎：定时循环、命名、保存、去重、CSV 清单、日志
-│  ├─ gui_qt.py                 PyQt5 界面（奶白现代风）
+│  ├─ gui_qt.py                 PyQt6 界面（奶白现代风）
+│  ├─ recorder_dialog_qt.py     PyQt6 录屏窗口（来源、画质调节、实时状态、日志）
 │  ├─ gui.py                    tkinter 界面（后备）
+│  ├─ recorder_window.py        tkinter 版录屏窗口（备用界面用）
+│  ├─ recorder/                 录屏子模块（纯 Python，无额外依赖）
+│  │  ├─ quality.py             参数模型、画质档位与码率估算、配置持久化
+│  │  ├─ capture.py             GDI 取帧（StretchBlt 缩放 + 鼠标光标）
+│  │  ├─ mf.py                  Media Foundation 编码（H.264 → MP4，ctypes 调用）
+│  │  ├─ crt.py                 ctypes/COM 底层工具（GUID、HRESULT、vtable 绑定）
+│  │  └─ engine.py              录制线程：帧率控制、暂停/继续、录制中改画质自动分段
 │  ├─ applog.py                 日志：实时写文件 + 转发给界面
 │  ├─ archive.py                每日归档：把前一天的截图打包成 zip
 │  ├─ paths.py                  路径规则：程序目录 / 默认截图目录 / 默认日志目录
-│  ├─ cli.py                    命令行与入口分发
+│  ├─ cli.py                    命令行与入口分发（截图 + 录屏）
 │  └─ selftest.py               环境自检
-├─ tests/                       test_smoke / test_gui / test_gui_qt
+├─ tests/                       test_smoke / test_gui / test_gui_qt / test_archive / test_record / test_recorder_qt
 └─ dist/                        打包产物
 ```
 
@@ -410,17 +519,46 @@ engine.start()
 engine.join()
 ```
 
-## 8. 自测
+录屏也可以直接当库用（录制中随时改画质）：
 
-```bat
-python tests\test_smoke.py     :: 引擎 / Win32 / 命令行（16 项）
-python tests\test_gui_qt.py    :: PyQt5 界面（11 项，含「最小化不停止」与界面预览图）
-python tests\test_gui.py       :: tkinter 界面（4 项）
-python tests\test_archive.py   :: 每日归档（6 项）
-python run.py --selftest       :: 环境自检（10 项，含 WGC 与运行权限）
+```python
+from screen_capture import recorder as rec
+from screen_capture.engine import Target
+
+config = rec.RecordingConfig(
+    target=Target(kind="screen"),
+    output_dir=r"D:\videos",
+    resolution="1080p",   # native / 2160p / 1440p / 1080p / 720p / 480p / 360p
+    fps=30,
+    quality="high",       # low / standard / high / ultra
+    bitrate_kbps=0,       # 0 = 自动
+    capture_cursor=True,
+)
+engine = rec.RecorderEngine(config, on_event=print)
+engine.start(countdown=False)
+
+# 录制中想换画质（会自动分段，旧片段照常保存）
+engine.apply_config(replace(config, resolution="720p", quality="standard"))
+
+engine.stop_and_wait()
 ```
 
-## 9. 常见问题
+## 9. 自测
+
+```bat
+python tests\test_smoke.py     :: 引擎 / Win32 / 命令行（26 项）
+python tests\test_gui_qt.py    :: PyQt6 界面（18 项，含界面预览图与录屏入口）
+python tests\test_recorder_qt.py :: PyQt6 录屏窗口（4 项：控件、参数联动、预设、真实录制）
+python tests\test_gui.py       :: tkinter 界面（4 项）
+python tests\test_archive.py   :: 每日归档（6 项）
+python tests\test_record.py    :: 录屏引擎（13 项：参数计算 + 真实录制产出 MP4 + 分段）
+python run.py --selftest       :: 环境自检（14 项，含 WGC、录屏编码器与录屏实拍）
+```
+
+> 需要 Qt / wgc_python 的项在缺少这两个库时会显示「失败」，属于环境问题而非代码问题
+> （例如某个 Python 版本还没有对应的 Qt 轮子）。录屏相关的自检不依赖第三方库。
+
+## 10. 常见问题
 
 * **截到的是被别的窗口盖住的画面**：说明用的是屏幕区域方式。把截图方式改成「自动」或「WGC」即可；
   WGC 需要 Windows 10 1903+。
@@ -438,7 +576,8 @@ python run.py --selftest       :: 环境自检（10 项，含 WGC 与运行权�
 * **窗口最小化时报错**：这是有意的明确提示，最小化窗口没有可绘制内容，请先还原。
 * **exe 报 `Could not create temporary directory`**：单文件版需要可写的 `%TEMP%`；
   改用目录版（`python build_exe.py`），或清理临时目录 / 调整 `TMP` 环境变量。
-* **界面是 tkinter 的样子**：说明 PyQt5 没装上，`pip install PyQt5` 即可；`--ui tk` 也会强制用旧界面。
+* **界面是 tkinter 的样子**：说明 PyQt6 没装上，`pip install PyQt6 -i https://mirrors.aliyun.com/pypi/simple/`
+  即可；`python run.py --ui tk` 会强制用旧界面。
 * **双击 bat 没反应**：确认 `py -3 --version` 可用；Store 版 `python` 是占位程序，装正式版即可。
 * **杀毒软件提示**：程序会枚举窗口、读取屏幕像素、加载截屏 DLL，属于正常截图行为，可加入信任列表。
 * **双击 exe 弹「Windows 已保护你的电脑 / SmartScreen 阻止了无法识别的应用」**：
@@ -452,7 +591,7 @@ python run.py --selftest       :: 环境自检（10 项，含 WGC 与运行权�
      里关掉「检查应用和文件」（会降低系统整体防护，请自行权衡）。
   另外可以核对文件哈希确认没被篡改：`Get-FileHash dist\**\*.exe -Algorithm SHA256`。
 
-## 10. 致谢
+## 11. 致谢
 
 * WGC 捕获使用 [`wgc_python`](https://pypi.org/project/wgc-python/)（MIT License）；
 * 常驻会话 + 按需取帧的思路参考了 [ok-script](https://github.com/ok-oldking/ok-script) 的窗口捕获实现；

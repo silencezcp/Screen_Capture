@@ -41,7 +41,7 @@ class _Cancelled(Exception):
 
 
 def default_output_dir() -> Path:
-    """默认保存到「程序目录\\ScreenCapture」（与 PyQt5 界面一致）。"""
+    """默认保存到「程序目录\\ScreenCapture」（与 Qt 界面一致）。"""
     from . import paths
 
     return paths.default_capture_dir()
@@ -252,10 +252,11 @@ class CaptureApp:
         self.stop_button.grid(row=0, column=1, padx=6)
         self.test_button = ttk.Button(bottom, text="试截一张", command=self._on_test_shot)
         self.test_button.grid(row=0, column=2)
-        ttk.Button(bottom, text="打开保存目录", command=self._open_output_dir).grid(row=0, column=3, padx=6)
+        ttk.Button(bottom, text="● 录屏…", command=self._on_record).grid(row=0, column=3, padx=(6, 0))
+        ttk.Button(bottom, text="打开保存目录", command=self._open_output_dir).grid(row=0, column=4, padx=6)
         self.status_var = tk.StringVar(value="就绪：请选择目标窗口并设置间隔时间")
         ttk.Label(bottom, textvariable=self.status_var, style="Status.TLabel",
-                  relief="sunken", anchor="w").grid(row=0, column=4, sticky="ew", padx=(10, 0))
+                  relief="sunken", anchor="w").grid(row=0, column=5, sticky="ew", padx=(10, 0))
 
         # ---- 日志 --------------------------------------------------------
         log_frame = ttk.LabelFrame(main, text=" 运行日志 ", padding=6)
@@ -497,6 +498,18 @@ class CaptureApp:
             self._log("正在停止…")
             self.engine.stop(timeout=0.05)
         self._set_idle_state()
+
+    def _on_record(self) -> None:
+        """打开录屏窗口（沿用当前选中的目标窗口与保存目录）。"""
+        from . import recorder_window
+
+        target = self._selected_target()
+        try:
+            recorder_window.present(self.root, target=target, output_dir=self.output_var.get().strip())
+        except Exception as exc:  # pragma: no cover - 界面异常兜底
+            messagebox.showerror("无法打开录屏窗口", str(exc))
+            return
+        self._log("已打开录屏窗口（可调画质；录制中修改分辨率/帧率/码率会自动分段）。")
 
     def _set_idle_state(self) -> None:
         self.start_button.configure(state="normal")

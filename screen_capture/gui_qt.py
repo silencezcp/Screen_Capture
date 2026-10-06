@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
-"""PyQt5 图形界面：奶白色现代风格。
+"""PyQt6 图形界面：奶白色现代风格。
 
 * 三步式布局：选目标窗口 → 调截图设置 → 开始 / 停止，右侧实时日志；
 * 截图引擎跑在后台线程，事件通过 Qt 信号回到主线程，界面不会卡；
 * 所有日志实时写入本地文件（见 applog），界面里也能一键打开日志。
+
+PyQt6 的枚举都是「作用域枚举」（``Qt.AlignmentFlag.AlignCenter``），
+本模块用 :func:`QENUM` 把它们解析成模块级常量，读起来更清爽。
 """
 from __future__ import annotations
 
@@ -15,22 +18,78 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from PyQt5.QtCore import (
-    QEvent, QObject, QProcess, QSettings, Qt, QTimer, QUrl, pyqtSignal,
+from PyQt6.QtCore import (
+    QEvent, QObject, QPoint, QProcess, QSettings, Qt, QTimer, QUrl, pyqtSignal,
 )
-from PyQt5.QtGui import (
-    QColor, QDesktopServices, QFont, QIcon, QPainter, QPixmap,
+from PyQt6.QtGui import (
+    QAction, QColor, QDesktopServices, QFont, QIcon, QPainter, QPixmap,
 )
-from PyQt5.QtNetwork import QLocalServer, QLocalSocket
-from PyQt5.QtWidgets import (
-    QAbstractItemView, QAction, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+from PyQt6.QtWidgets import (
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QSystemTrayIcon, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
+
+
+def QENUM(owner: Any, name: str) -> Any:
+    """取某个控件类上的 Qt 枚举成员（PyQt6 是作用域枚举）。
+
+    PyQt6 里 ``QSettings.IniFormat`` 变成了 ``QSettings.Format.IniFormat``，
+    这个函数两种写法都能取到。``Qt`` 本身是枚举容器，直接用
+    ``Qt.AlignmentFlag.AlignCenter`` 这类规范写法即可，不必经过这里。
+    """
+    member = getattr(owner, name, None)
+    if member is not None:
+        return member
+    for group_name in dir(owner):
+        if not group_name[:1].isupper():
+            continue
+        group = getattr(owner, group_name, None)
+        # 只认真正的枚举类型（Python 的 enum 有 __members__），
+        # 否则会在 QEvent.WindowStateChange 这类枚举值上白找一圈
+        if group is None or not hasattr(group, "__members__"):
+            continue
+        member = getattr(group, name, None)
+        if member is not None and not callable(member):
+            return member
+        if "_" in name:   # 旧写法 Format_RGB -> Format.RGB
+            head, _, tail = name.partition("_")
+            if group_name == head:
+                member = getattr(group, tail, None)
+                if member is not None and not callable(member):
+                    return member
+    raise AttributeError(f"{owner!r} 上找不到枚举 {name}")
+
+
+# 界面里用到的 Qt 枚举（Qt6 规范写法 + 控件类上的枚举），统一解析一次
+QT_ALIGN_CENTER = Qt.AlignmentFlag.AlignCenter
+QT_ALIGN_TOP = Qt.AlignmentFlag.AlignTop
+QT_USER_ROLE = Qt.ItemDataRole.UserRole
+QT_TRANSPARENT = Qt.GlobalColor.transparent
+QT_NO_PEN = Qt.PenStyle.NoPen
+QT_WAIT_CURSOR = Qt.CursorShape.WaitCursor
+QT_KEEP_ASPECT = Qt.AspectRatioMode.KeepAspectRatio
+QT_SMOOTH_TRANSFORM = Qt.TransformationMode.SmoothTransformation
+QT_WINDOW_STATE_CHANGE = QENUM(QEvent, "WindowStateChange")
+QT_SELECT_ROWS = QENUM(QAbstractItemView, "SelectRows")
+QT_NO_EDIT_TRIGGERS = QENUM(QAbstractItemView, "NoEditTriggers")
+QT_SINGLE_SELECTION = QENUM(QAbstractItemView, "SingleSelection")
+QT_HEADER_STRETCH = QENUM(QHeaderView, "Stretch")
+QT_HEADER_RESIZE_CONTENTS = QENUM(QHeaderView, "ResizeToContents")
+QT_ANTIALIASING = QENUM(QPainter, "Antialiasing")
+QT_SIZE_EXPANDING = QENUM(QSizePolicy, "Expanding")
+QT_SIZE_FIXED = QENUM(QSizePolicy, "Fixed")
+QT_FONT_MONOSPACE = QENUM(QFont, "Monospace")
+QT_MSG_YES = QENUM(QMessageBox, "Yes")
+QT_TRAY_TRIGGER = QENUM(QSystemTrayIcon, "Trigger")
+QT_TRAY_DOUBLE_CLICK = QENUM(QSystemTrayIcon, "DoubleClick")
+QT_TRAY_INFO = QENUM(QSystemTrayIcon, "Information")
+QT_SETTINGS_INI = QENUM(QSettings, "IniFormat")
 
 from . import __version__ as APP_VERSION
 from . import applog
@@ -104,7 +163,7 @@ def make_settings() -> QSettings:
         target.parent.mkdir(parents=True, exist_ok=True)
     except Exception:  # pragma: no cover - 极端只读环境
         pass
-    settings = QSettings(str(target), QSettings.IniFormat)
+    settings = QSettings(str(target), QT_SETTINGS_INI)
     if hasattr(settings, "setIniCodec"):
         # Qt5 默认会把中文转义成 \xHH，写 UTF-8 才能用记事本直接看/改
         settings.setIniCodec("UTF-8")
@@ -271,10 +330,10 @@ def app_icon() -> QIcon:
             if not icon.isNull():
                 return icon
     pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.transparent)
+    pixmap.fill(QT_TRANSPARENT)
     painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setPen(Qt.NoPen)
+    painter.setRenderHint(QT_ANTIALIASING)
+    painter.setPen(QT_NO_PEN)
     painter.setBrush(QColor(PRIMARY))
     painter.drawRoundedRect(4, 16, 56, 40, 9, 9)
     painter.setBrush(QColor(SURFACE))
@@ -314,6 +373,7 @@ class MainWindow(QMainWindow):
                     f"（已从注册表迁移 {moved} 项旧设置）" if moved else "")
         self.tray: QSystemTrayIcon | None = None
         self.archiver: DailyArchiver | None = None
+        self._recorder = None      # 录屏窗口（打开后持有引用，避免被回收）
         self._server: QLocalServer | None = None
         self.monitoring = False          # 监听模式：窗口收起来了但截图继续
         self._tray_hint_shown = False
@@ -339,7 +399,7 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self._tick)
         self.timer.start(200)
 
-        logger.info("界面已就绪（PyQt5 %s）", _qt_version())
+        logger.info("界面已就绪（%s）", _qt_version())
 
     # ------------------------------------------------------------------
     # 界面搭建
@@ -531,15 +591,15 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["窗口标题", "程序", "尺寸", "句柄"])
         self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QT_SELECT_ROWS)
+        self.table.setSelectionMode(QT_SINGLE_SELECTION)
+        self.table.setEditTriggers(QT_NO_EDIT_TRIGGERS)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(False)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QT_HEADER_STRETCH)
         for column in (1, 2, 3):
-            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(column, QT_HEADER_RESIZE_CONTENTS)
         self.table.itemSelectionChanged.connect(self.on_select)
         self.table.doubleClicked.connect(lambda _i: self.on_start())
         layout.addWidget(self.table, 1)
@@ -565,9 +625,9 @@ class MainWindow(QMainWindow):
     def _build_preview_card(self) -> QFrame:
         frame, layout = self._card("2. 最新截图预览")
         self.preview = QLabel("（还没有截图）", objectName="Preview")
-        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setAlignment(QT_ALIGN_CENTER)
         self.preview.setMinimumHeight(170)
-        self.preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.preview.setSizePolicy(QT_SIZE_EXPANDING, QT_SIZE_FIXED)
         layout.addWidget(self.preview)
         self.preview_caption = QLabel("", objectName="Hint")
         self.preview_caption.setWordWrap(True)
@@ -583,7 +643,7 @@ class MainWindow(QMainWindow):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
         grid.setColumnStretch(1, 1)
-        grid.setAlignment(Qt.AlignTop)     # 行贴着顶部排，多余高度留在下方
+        grid.setAlignment(QT_ALIGN_TOP)     # 行贴着顶部排，多余高度留在下方
         row = 0
 
         grid.addWidget(QLabel("截图间隔（秒）"), row, 0)
@@ -758,7 +818,7 @@ class MainWindow(QMainWindow):
         self.log_view.setMaximumBlockCount(3000)
         self.log_view.setMinimumHeight(120)
         font = QFont("Consolas")
-        font.setStyleHint(QFont.Monospace)
+        font.setStyleHint(QT_FONT_MONOSPACE)
         self.log_view.setFont(font)
         layout.addWidget(self.log_view, 1)
 
@@ -788,11 +848,14 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.test_button = QPushButton("试截一张")
         self.test_button.clicked.connect(self.on_test_shot)
+        self.record_button = QPushButton("●  录屏…")
+        self.record_button.clicked.connect(self.on_open_recorder)
         open_dir = QPushButton("打开保存目录")
         open_dir.clicked.connect(self.on_open_output_dir)
         row.addWidget(self.start_button)
         row.addWidget(self.stop_button)
         row.addWidget(self.test_button)
+        row.addWidget(self.record_button)
         row.addWidget(open_dir)
         row.addStretch(1)
         self.counter_label = QLabel("已保存 0 张｜跳过 0 张", objectName="Hint")
@@ -815,6 +878,8 @@ class MainWindow(QMainWindow):
         action_start.triggered.connect(self.on_start)
         action_stop = QAction("停止", self)
         action_stop.triggered.connect(self.on_stop)
+        action_record = QAction("录屏…", self)
+        action_record.triggered.connect(self.on_open_recorder)
         action_open = QAction("打开保存目录", self)
         action_open.triggered.connect(self.on_open_output_dir)
         action_quit = QAction("退出", self)
@@ -823,6 +888,7 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction(action_start)
         menu.addAction(action_stop)
+        menu.addAction(action_record)
         menu.addAction(action_open)
         menu.addSeparator()
         menu.addAction(action_quit)
@@ -833,7 +899,7 @@ class MainWindow(QMainWindow):
         self._tray_menu = menu
 
     def _on_tray_activated(self, reason) -> None:
-        if reason in (QSystemTrayIcon.DoubleClick, QSystemTrayIcon.Trigger):
+        if reason in (QT_TRAY_DOUBLE_CLICK, QT_TRAY_TRIGGER):
             self._restore_window()
 
     def _restore_window(self) -> None:
@@ -848,7 +914,7 @@ class MainWindow(QMainWindow):
     # 监听模式：最小化 ≠ 停止
     # ------------------------------------------------------------------
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
-        if event.type() == QEvent.WindowStateChange and self.isMinimized():
+        if event.type() == QT_WINDOW_STATE_CHANGE and self.isMinimized():
             self._enter_monitoring()
         super().changeEvent(event)
 
@@ -874,7 +940,7 @@ class MainWindow(QMainWindow):
                 "已收进托盘，截图继续",
                 ("截图会继续在后台执行。" if running else "窗口已收进托盘。")
                 + "双击托盘图标恢复窗口；右键托盘可停止或退出。",
-                QSystemTrayIcon.Information, 4000,
+                QT_TRAY_INFO, 4000,
             )
 
     def _quit_app(self) -> None:
@@ -969,7 +1035,7 @@ class MainWindow(QMainWindow):
     # 窗口列表
     # ------------------------------------------------------------------
     def refresh_windows(self) -> None:
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(QT_WAIT_CURSOR)
         try:
             self.window_list = w.enum_windows(include_own=self.own_check.isChecked())
         except Exception as exc:
@@ -1001,15 +1067,15 @@ class MainWindow(QMainWindow):
         for column, text in enumerate(values):
             item = QTableWidgetItem(text)
             if column == 3:
-                item.setTextAlignment(Qt.AlignCenter)
-            item.setData(Qt.UserRole, info.hwnd)
+                item.setTextAlignment(QT_ALIGN_CENTER)
+            item.setData(QT_USER_ROLE, info.hwnd)
             self.table.setItem(row, column, item)
 
     def _selected_hwnd(self) -> int:
         items = self.table.selectedItems()
         if not items:
             return 0
-        return int(items[0].data(Qt.UserRole) or 0)
+        return int(items[0].data(QT_USER_ROLE) or 0)
 
     def on_screen_toggle(self) -> None:
         if self.screen_check.isChecked():
@@ -1164,6 +1230,25 @@ class MainWindow(QMainWindow):
         self.test_button.setEnabled(True)
         self.next_at = None
 
+    def on_open_recorder(self) -> None:
+        """打开录屏窗口（沿用当前选中的目标窗口与保存目录）。"""
+        from . import recorder_dialog_qt
+
+        target = Target(kind=TARGET_SCREEN) if self.screen_check.isChecked() else None
+        if target is None:
+            info = self._current_info()
+            if info is not None:
+                target = Target(kind=TARGET_WINDOW, hwnd=info.hwnd, title=info.title,
+                                app_label=info.process_name or info.title)
+        try:
+            self._recorder = recorder_dialog_qt.present(
+                self, target=target, output_dir=self.output_edit.text().strip(),
+                stylesheet=QSS)
+        except Exception as exc:  # pragma: no cover - 界面异常兜底
+            QMessageBox.critical(self, "无法打开录屏窗口", str(exc))
+            return
+        self.append_log("已打开录屏窗口（可调画质；录制中改分辨率/帧率/码率会自动分段）。")
+
     def on_test_shot(self) -> None:
         try:
             config = self.collect_config()
@@ -1262,7 +1347,7 @@ class MainWindow(QMainWindow):
             if pixmap.isNull():
                 return
             scaled = pixmap.scaled(self.preview.width() - 8, self.preview.height() - 8,
-                                   Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                   QT_KEEP_ASPECT, QT_SMOOTH_TRANSFORM)
             self.preview.setPixmap(scaled)
             self.preview.setStyleSheet("border: 1px solid #E8DFD2; border-radius: 12px;")
             self.preview_path = Path(event["path"])
@@ -1372,7 +1457,7 @@ class MainWindow(QMainWindow):
                 self.tray.showMessage(
                     "仍在后台运行",
                     "截图任务会继续；双击托盘图标恢复窗口，右键托盘「退出」才真正结束。",
-                    QSystemTrayIcon.Information, 4000,
+                    QT_TRAY_INFO, 4000,
                 )
             return
         # 默认：关掉窗口 = 退出程序 = 停止截图
@@ -1380,7 +1465,7 @@ class MainWindow(QMainWindow):
             answer = QMessageBox.question(
                 self, "退出程序",
                 f"正在截图（已保存 {self.counts['saved']} 张）。\n关闭程序会停止截图，确定退出吗？")
-            if answer != QMessageBox.Yes:
+            if answer != QT_MSG_YES:
                 event.ignore()
                 return
         self._quitting = True
@@ -1397,8 +1482,8 @@ class MainWindow(QMainWindow):
 
 
 def _qt_version() -> str:
-    from PyQt5.QtCore import QT_VERSION_STR
-    return QT_VERSION_STR
+    from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+    return f"PyQt6 {PYQT_VERSION_STR}（Qt {QT_VERSION_STR}）"
 
 
 def _wgc_available() -> bool:
@@ -1410,10 +1495,6 @@ def launch() -> int:
     """启动 Qt 界面。"""
     w.enable_dpi_awareness()
     applog.setup_logging()
-    if hasattr(Qt, "AA_EnableHighDpiScaling"):
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    if hasattr(Qt, "AA_UseHighDpiPixmaps"):
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("应用窗口定时截图工具")
     app.setStyle("Fusion")
@@ -1423,7 +1504,7 @@ def launch() -> int:
         return 0
     window = MainWindow()
     window.show()
-    return app.exec_()
+    return app.exec()
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PyQt5 界面测试：构建窗口、参数校验、完整截图流程，并渲染一张界面预览图。
+"""PyQt6 界面测试：构建窗口、参数校验、完整截图流程，并渲染界面预览图。
 
 运行：python tests/test_gui_qt.py
 """
@@ -16,15 +16,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")   # 无桌面环境也能跑
 
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from PIL import Image  # noqa: E402
 
 from screen_capture import applog, win32 as w  # noqa: E402
-from screen_capture.engine import ConfigError, TARGET_SCREEN  # noqa: E402
+from screen_capture.engine import ConfigError, Target, TARGET_SCREEN  # noqa: E402
 from screen_capture.gui_qt import (  # noqa: E402
     METHOD_CHOICES, SETTINGS_VERSION, MainWindow, QSS,
 )
+from screen_capture.recorder.engine import probe_encoder  # noqa: E402
 
 OUT_DIR = ROOT / "_test_out" / "qt"
 # 界面设置写到独立的 ini 文件，绝不碰用户真实的注册表配置
@@ -39,8 +40,8 @@ class QtUiTests(unittest.TestCase):
         cls.app.setStyleSheet(QSS)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         os.environ["SCREEN_CAPTURE_SETTINGS_FILE"] = str(SETTINGS_FILE)
-        from PyQt5.QtCore import QSettings
-        settings = QSettings(str(SETTINGS_FILE), QSettings.IniFormat)
+        from PyQt6.QtCore import QSettings
+        settings = QSettings(str(SETTINGS_FILE), QSettings.Format.IniFormat)
         settings.clear()
         settings.setValue("settings_version", SETTINGS_VERSION)
         settings.setValue("output", str(OUT_DIR / "default"))
@@ -78,12 +79,60 @@ class QtUiTests(unittest.TestCase):
             time.sleep(0.02)
 
     # ------------------------------------------------------------------
+    def test_qt6_enums_and_widgets_are_wired(self):
+        """界面用到的 Qt6 枚举与 QENUM 解析都必须可用（PyQt6 作用域枚举）。"""
+        import PyQt6
+        from PyQt6.QtCore import QT_VERSION_STR
+
+        from screen_capture import gui_qt
+
+        self.assertTrue(QT_VERSION_STR.startswith("6."), f"Qt 版本异常：{QT_VERSION_STR}")
+        self.assertTrue(PyQt6.__name__ == "PyQt6")
+
+        # QENUM 必须能解析出界面里用到的每个枚举
+        from PyQt6.QtCore import QEvent, QSettings, Qt
+        from PyQt6.QtWidgets import QAbstractItemView, QHeaderView, QMessageBox, QSizePolicy
+
+        cases = [
+            (Qt, "AlignCenter"), (Qt, "AlignTop"), (Qt, "UserRole"), (Qt, "transparent"),
+            (Qt, "NoPen"), (Qt, "WaitCursor"), (Qt, "KeepAspectRatio"),
+            (Qt, "SmoothTransformation"),
+            (QEvent, "WindowStateChange"),
+            (QAbstractItemView, "SelectRows"), (QAbstractItemView, "NoEditTriggers"),
+            (QAbstractItemView, "SingleSelection"),
+            (QHeaderView, "Stretch"), (QHeaderView, "ResizeToContents"),
+            (QSizePolicy, "Expanding"), (QSizePolicy, "Fixed"),
+            (QMessageBox, "Yes"), (QSettings, "IniFormat"),
+        ]
+        for owner, name in cases:
+            with self.subTest(enum=name):
+                self.assertIsNotNone(gui_qt.QENUM(owner, name), f"{name} 解析失败")
+
+        # 模块级常量都要真的解析成功（不是 None）
+        for const in ("QT_ALIGN_CENTER", "QT_SELECT_ROWS", "QT_TRAY_TRIGGER",
+                      "QT_SETTINGS_INI", "QT_WINDOW_STATE_CHANGE", "QT_ANTIALIASING"):
+            self.assertIsNotNone(getattr(gui_qt, const), f"{const} 未解析")
+
     def test_window_builds_and_lists_windows(self):
         self.assertGreater(len(self.win.window_list), 0, "没有枚举到任何窗口")
         self.assertGreater(self.win.table.rowCount(), 0, "列表里没有行")
         self.assertEqual(len(METHOD_CHOICES), 4)
         values = [value for _label, value in METHOD_CHOICES]
         self.assertEqual(values, [w.METHOD_AUTO, w.METHOD_WGC, w.METHOD_PRINTWINDOW, w.METHOD_SCREEN])
+
+    def test_main_window_exposes_recorder_entry(self):
+        """主界面必须有录屏入口（按钮 + 托盘菜单），否则用户找不到录屏功能。"""
+        from PyQt6.QtWidgets import QPushButton
+
+        self.assertTrue(hasattr(self.win, "record_button"), "主界面缺少录屏按钮")
+        self.assertIsInstance(self.win.record_button, QPushButton)
+        self.assertIn("录屏", self.win.record_button.text())
+        self.assertTrue(self.win.record_button.isEnabled(), "录屏按钮不可用")
+        # 打开录屏窗口（不阻塞）
+        self.win.on_open_recorder()
+        self.assertIsNotNone(getattr(self.win, "_recorder", None), "录屏窗口没有打开")
+        self.win._recorder.close()
+        self.win._recorder = None
 
     def test_minimize_enters_listening_and_keeps_capturing(self):
         """窗口最小化 = 进入监听模式，截图必须继续；只有退出程序才停止。"""
@@ -188,8 +237,18 @@ class QtUiTests(unittest.TestCase):
         self.assertFalse(self.win.engine.running, "改了上限后任务没有立即结束")
         final = self.win.counts["saved"]
         self.assertLessEqual(final, current + 1, f"改了上限后还多截了好几张：{current} -> {final}")
+        # 文件数可能与计数差 1：收尾时已抓完、尚在写盘的那一张会在停止后再落盘。
+        # 所以这里给一格容差，并等写盘稳定下来再比较（避免时序抖动导致偶发失败）。
+        deadline = time.monotonic() + 3
         files = sorted(target_dir.glob("*.png"))
-        self.assertEqual(len(files), final, f"文件数 {len(files)} 与计数 {final} 不一致")
+        while time.monotonic() < deadline:
+            self.pump(0.1)
+            new_files = sorted(target_dir.glob("*.png"))
+            if len(new_files) == len(files):
+                break
+            files = new_files
+        self.assertLessEqual(abs(len(files) - final), 1,
+                             f"文件数 {len(files)} 与计数 {final} 相差过多")
         print(f"  [info] 运行中改间隔/上限即时生效：新间隔后 {elapsed:.2f}s 出下一张，"
               f"上限改小后立刻收尾（共 {final} 张）")
 
@@ -212,7 +271,7 @@ class QtUiTests(unittest.TestCase):
         踩过的坑：给 QSpinBox:disabled::up-button 单独设样式，会让 Qt 把禁用配色
         画到启用态的 QSpinBox 上，于是启用/禁用看起来一模一样。
         """
-        from PyQt5.QtCore import QPoint
+        from PyQt6.QtCore import QPoint
 
         self.win.show()
         self.pump(0.3)

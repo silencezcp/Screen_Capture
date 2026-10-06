@@ -8,8 +8,10 @@
     python build_exe.py --cli-only       # 只打包命令行版
     python build_exe.py --clean          # 先清掉 PyInstaller 缓存再打包
 
-前置条件：pip install pyinstaller pyqt5 wgc_python
-产物：dist\\应用窗口定时截图工具\\应用窗口定时截图工具.exe（界面版，PyQt5）
+前置条件：pip install pyinstaller PyQt6 Pillow numpy wgc_python
+         （国内可用镜像：-i https://pypi.tuna.tsinghua.edu.cn/simple 或
+           -i https://mirrors.aliyun.com/pypi/simple/）
+产物：dist\\应用窗口定时截图工具\\应用窗口定时截图工具.exe（界面版，PyQt6）
       dist\\应用窗口定时截图工具-命令行\\应用窗口定时截图工具-命令行.exe（命令行版）
 """
 from __future__ import annotations
@@ -53,22 +55,49 @@ VERSION = tuple(_parts + [0] * (4 - len(_parts)))
 GUI_NAME = "应用窗口定时截图工具"
 CLI_NAME = "应用窗口定时截图工具-命令行"
 
-# tkinter / Pillow / PyQt5 / WGC 的子模块要显式声明，打包后才不会缺件
+# tkinter / Pillow / Qt / WGC / 录屏 的子模块要显式声明，打包后才不会缺件
 HIDDEN_IMPORTS = [
     "PIL.Image", "PIL.ImageTk", "PIL._tkinter_finder",
     "PIL.PngImagePlugin", "PIL.JpegImagePlugin", "PIL.BmpImagePlugin", "PIL.WebPImagePlugin",
     "tkinter", "tkinter.ttk", "tkinter.font", "tkinter.filedialog",
     "tkinter.messagebox", "tkinter.scrolledtext",
-    "PyQt5", "PyQt5.sip", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets", "PyQt5.QtNetwork",
     "numpy", "wgc_python",
     "screen_capture", "screen_capture.cli", "screen_capture.gui", "screen_capture.gui_qt",
     "screen_capture.engine", "screen_capture.win32", "screen_capture.selftest",
     "screen_capture.capture_wgc", "screen_capture.applog",
+    "screen_capture.recorder", "screen_capture.recorder.engine", "screen_capture.recorder.mf",
+    "screen_capture.recorder.capture", "screen_capture.recorder.crt",
+    "screen_capture.recorder.quality", "screen_capture.recorder_window",
+    "screen_capture.recorder_dialog_qt",
 ]
+
+# PyQt6 的子模块要显式声明，打包后才不会缺件
+def _qt_hidden_imports() -> list:
+    name = "PyQt6"
+    try:
+        if importlib.util.find_spec(name) is None:
+            log(f"警告：当前环境没有 {name}，打出来的 exe 只能用 tkinter 界面。"
+                f"可执行：pip install {name} -i https://pypi.tuna.tsinghua.edu.cn/simple")
+            return []
+    except Exception:  # pragma: no cover - 导入探测失败
+        return []
+    return [name, f"{name}.sip", f"{name}.QtCore", f"{name}.QtGui",
+            f"{name}.QtWidgets", f"{name}.QtNetwork"]
+
+
+HIDDEN_IMPORTS += _qt_hidden_imports()
 
 # 用不到的大块头，排除掉可以显著减小体积
 EXCLUDES = [
     "numpy.testing", "pandas", "matplotlib", "scipy", "sympy", "sqlalchemy", "cv2",
+    "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore", "PyQt6.QtWebEngine",
+    "PyQt6.QtQml", "PyQt6.QtQuick", "PyQt6.QtQuickWidgets", "PyQt6.QtMultimedia",
+    "PyQt6.QtMultimediaWidgets", "PyQt6.Qt3DCore", "PyQt6.Qt3DRender",
+    "PyQt6.QtCharts", "PyQt6.QtDataVisualization", "PyQt6.QtBluetooth",
+    "PyQt6.QtNfc", "PyQt6.QtPositioning", "PyQt6.QtLocation", "PyQt6.QtSensors",
+    "PyQt6.QtSerialPort", "PyQt6.QtWebSockets", "PyQt6.QtTest", "PyQt6.QtDesigner",
+    "PyQt6.QtHelp", "PyQt6.QtSql", "PyQt6.QtXml", "PyQt6.QtOpenGL",
+    "PyQt6.QtSvg", "PyQt6.QtPrintSupport", "PyQt6.QtPdf",
     "PyQt5.QtWebEngineWidgets", "PyQt5.QtWebEngineCore", "PyQt5.QtWebEngine",
     "PyQt5.QtQml", "PyQt5.QtQuick", "PyQt5.QtQuickWidgets", "PyQt5.QtMultimedia",
     "PyQt5.QtMultimediaWidgets", "PyQt5.Qt3DCore", "PyQt5.Qt3DRender",
@@ -134,6 +163,78 @@ VSVersionInfo(
     return path
 
 
+# 真正需要的 Qt6 运行库（不要 QtWebEngine/Qml/Quick 这些大块头）
+QT_REQUIRED_DLLS = (
+    "Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "Qt6Network.dll",
+    "Qt6Svg.dll", "Qt6PrintSupport.dll", "Qt6StyleImpl.dll",
+    "qwindowsvistastyle.dll",
+)
+
+
+def runtime_dlls() -> list:
+    """收集运行时依赖的第三方 DLL（精确白名单，避免把整个 conda 环境搬进去）。
+
+    为什么需要：在 conda / Anaconda 环境里，PIL 的 ``_imaging.pyd``、PyQt6 的
+    Qt6 DLL 等依赖的底层库放在 ``<环境>\\Library\\bin`` 或
+    ``<环境>\\Library\\lib\\qt6\\bin``，PyInstaller 默认只按扩展模块自己的目录找，
+    找不到就报 "Library not found"，打出来的 exe 一跑就 ``DLL load failed``。
+    """
+    env_root = Path(sys.executable).resolve().parent
+    search_dirs = []
+    for sub in ("Library/bin", "Library/lib", "Library/lib/qt6/bin", "DLLs"):
+        directory = env_root / sub
+        if directory.is_dir():
+            search_dirs.append(directory)
+
+    # PIL 图像格式库 + 常见压缩/字符集库（名称片段匹配）
+    keyword_dlls = ("jpeg", "tiff", "webp", "openjp2", "lcms", "zlib", "libpng",
+                    "freetype", "harfbuzz", "yaml", "charset", "iconv", "lzma",
+                    "bz2", "ffi", "expat", "avif", "heif")
+    exact_lower = {name.lower() for name in QT_REQUIRED_DLLS}
+
+    found = []
+    seen = set()
+    for directory in search_dirs:
+        for path in sorted(directory.glob("*.dll")):
+            name = path.name.lower()
+            if path.name in seen:
+                continue
+            if name in exact_lower or any(word in name for word in keyword_dlls):
+                found.append(path)
+                seen.add(path.name)
+    if found:
+        log(f"额外收集 {len(found)} 个运行时 DLL（来自 {len(search_dirs)} 个目录）")
+    return [f"{path}{os.pathsep}." for path in found]
+
+
+def qt_plugin_dirs() -> list:
+    """收集 Qt6 的平台/样式/图像插件目录。
+
+    Qt 需要 ``platforms/qwindows.dll`` 才能起界面，PyInstaller 的 PyQt6 钩子在
+    conda 环境里常常找不到（Qt6 DLL 与插件分开放），所以这里手动带上。
+    """
+    env_root = Path(sys.executable).resolve().parent
+    candidates = [
+        Path(env_root) / "Lib" / "site-packages" / "PyQt6" / "Qt6" / "plugins",
+        Path(env_root) / "Library" / "lib" / "qt6" / "plugins",
+        Path(env_root) / "Library" / "plugins",
+    ]
+    wanted = ("platforms", "styles", "imageformats", "iconengines", "tls")
+    items = []
+    for plugins in candidates:
+        if not plugins.is_dir():
+            continue
+        for name in wanted:
+            directory = plugins / name
+            if directory.is_dir() and any(directory.glob("*.dll")):
+                # 放到 PyQt6/Qt6/plugins 下，PyQt6 会自动在那里找
+                items.append(f"{directory}{os.pathsep}PyQt6/Qt6/plugins/{name}")
+        if items:
+            log(f"收集 Qt 插件：{plugins}（{len(items)} 个目录）")
+            break
+    return items
+
+
 def wgc_data_files() -> list:
     """wgc_python 里带的 wgc_python.dll 属于包数据，必须手动带上。"""
     if importlib.util.find_spec("wgc_python") is None:
@@ -149,7 +250,8 @@ def wgc_data_files() -> list:
     return [f"{path}{os.pathsep}wgc_python" for path in files]
 
 
-def build(name: str, description: str, console: bool, onefile: bool, clean: bool) -> Path:
+def build(name: str, description: str, console: bool, onefile: bool, clean: bool,
+          minimal: bool = False) -> Path:
     version_file = write_version_file(BUILD / f"version_{'console' if console else 'gui'}.txt", description)
     command = [
         sys.executable, "-m", "PyInstaller",
@@ -174,6 +276,11 @@ def build(name: str, description: str, console: bool, onefile: bool, clean: bool
         command += ["--exclude-module", item]
     for item in wgc_data_files():
         command += ["--add-data", item]
+    if not minimal:
+        for item in qt_plugin_dirs():
+            command += ["--add-data", item]
+        for item in runtime_dlls():
+            command += ["--add-binary", item]
     if clean:
         command.append("--clean")
     command.append(str(ROOT / "run.py"))
@@ -401,9 +508,18 @@ def main(argv=None) -> int:
 
     onefile = args.onefile
     targets = []
+    # 调试开关：SCREEN_CAPTURE_DEBUG_CONSOLE=1 时把界面版也打成控制台版，
+    # 便于用命令行看到启动期报错（windowed 模式看不到任何输出）。
+    gui_console = os.environ.get("SCREEN_CAPTURE_DEBUG_CONSOLE") == "1"
+    gui_description = "应用窗口定时截图工具（图形界面）"
     if not args.cli_only:
-        targets.append(build(GUI_NAME, "应用窗口定时截图工具（图形界面）", console=False,
-                             onefile=onefile, clean=args.clean))
+        if gui_console:
+            # 调试模式用最简参数重打包，尽量排除 Qt 插件/DLL 收集的干扰
+            targets.append(build("GUITestDebug", "GUI 调试版", console=True,
+                                 onefile=onefile, clean=args.clean, minimal=True))
+        else:
+            targets.append(build(GUI_NAME, gui_description, console=False,
+                                 onefile=onefile, clean=args.clean))
     if not args.gui_only:
         targets.append(build(CLI_NAME, "应用窗口定时截图工具（命令行）", console=True,
                              onefile=onefile, clean=args.clean))

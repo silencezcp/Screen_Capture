@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""命令行模式：列窗口、按窗口/屏幕定时截图，便于脚本化与自动化验证。"""
+"""命令行模式：列窗口、按窗口/屏幕定时截图、录屏，便于脚本化与自动化验证。"""
 from __future__ import annotations
 
 import argparse
+import queue
 import sys
 import time
 from pathlib import Path
@@ -54,7 +55,7 @@ def list_windows(show_all: bool = False, keyword: str = "") -> int:
 
 
 def pick_window(args) -> Target:
-    """按 --hwnd / --title / --index 选定目标窗口。"""
+    """按 --hwnd / --title / --index / --screen 选定目标窗口。"""
     if args.screen:
         return Target(kind=TARGET_SCREEN)
     if args.hwnd:
@@ -78,7 +79,7 @@ def pick_window(args) -> Target:
         info = infos[args.index - 1]
         return Target(kind=TARGET_WINDOW, hwnd=info.hwnd, title=info.title,
                       app_label=info.process_name or info.title)
-    raise ConfigError("请用 --screen / --hwnd / --title / --index 指定截图目标")
+    raise ConfigError("请用 --screen / --hwnd / --title / --index 指定目标")
 
 
 def run_capture(args) -> int:
@@ -146,6 +147,96 @@ def run_capture(args) -> int:
     return 0 if saved > 0 else 2
 
 
+def run_record(args) -> int:
+    """命令行录屏：录制指定时长后自动停止。"""
+    from . import recorder as rec
+
+    target = resolve_target(pick_window(args))
+
+    if args.record_duration <= 0:
+        _print("录制时长必须大于 0 秒（--record-duration）", file=sys.stderr)
+        return 2
+
+    config = rec.RecordingConfig(
+        target=target,
+        output_dir=args.out,
+        resolution=args.record_resolution,
+        fps=args.record_fps,
+        quality=args.record_quality,
+        bitrate_kbps=args.record_bitrate,
+        profile=args.record_profile,
+        input_format=args.record_input,
+        scale_mode=args.record_scale,
+        filename_pattern=args.record_pattern,
+        start_delay=args.delay,
+        max_duration=args.record_duration,
+        capture_cursor=args.cursor,
+    )
+    try:
+        config.validate()
+    except ConfigError as exc:
+        _print(f"参数错误：{exc}", file=sys.stderr)
+        return 2
+
+    ok, message = rec.probe_encoder()
+    _print(f"编码器自检：{message}")
+    if not ok:
+        return 3
+
+    events: "queue.Queue[dict]" = queue.Queue()
+    engine = rec.RecorderEngine(config, on_event=events.put)
+
+    _print(f"目标：{target.describe()}")
+    _print(f"画质：{config.describe()}")
+    _print(f"输出：{config.output_dir}")
+    try:
+        engine.start(countdown=config.start_delay > 0)
+    except ConfigError as exc:
+        _print(f"无法开始录制：{exc}", file=sys.stderr)
+        return 2
+
+    deadline = time.monotonic() + args.record_duration + max(0.0, config.start_delay) + 10.0
+    last_progress = -1.0
+    try:
+        while engine.running and time.monotonic() < deadline:
+            try:
+                event = events.get(timeout=0.2)
+            except queue.Empty:
+                event = None
+            if event is not None:
+                kind = event.get("type")
+                if kind == "started":
+                    _print(f"开始录制：{event.get('quality')}")
+                elif kind == "countdown":
+                    _print(f"倒计时 {event.get('remaining')} 秒…")
+                elif kind == "file":
+                    _print(f"写入：{event.get('path')}")
+                elif kind == "quality":
+                    _print(f"画质：{event.get('text')}（输入 {event.get('input_format')}）")
+                elif kind == "error":
+                    _print(f"[错误] {event.get('message')}", file=sys.stderr)
+                elif kind == "finished":
+                    pass   # 结束汇总统一在下面输出，避免重复
+            stats = engine.snapshot()
+            if stats.elapsed - last_progress >= 2.0:
+                last_progress = stats.elapsed
+                _print(f"  … 已录制 {stats.elapsed_text}，{stats.frames} 帧，"
+                       f"{stats.actual_fps:.1f} fps，{stats.size_text}")
+    except KeyboardInterrupt:
+        _print("\n收到中断，正在停止…")
+    finally:
+        result = engine.stop_and_wait(timeout=30.0)
+
+    _print(result.summary())
+    for path in result.files:
+        try:
+            size = Path(path).stat().st_size
+        except OSError:
+            size = 0
+        _print(f"  文件：{path}（{size / 1024 / 1024:.1f} MB）")
+    return 0 if result.frames > 0 and result.total_bytes > 1024 else 3
+
+
 def archive_now(directory: str, delete_originals: bool = True) -> int:
     """立刻归档「早于今天」的截图（供 --archive-now 和定时任务使用）。"""
     from datetime import datetime
@@ -170,7 +261,7 @@ def archive_now(directory: str, delete_originals: bool = True) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="screen-capture",
-        description="按应用窗口定时截图（Windows / Python）",
+        description="按应用窗口定时截图 + 录屏（Windows / Python）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例：\n"
@@ -178,6 +269,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  python run.py --cli --title 记事本 --interval 2 --count 5 --out shots\n"
             "  python run.py --cli --index 3 --interval 0.5 --duration 10 --out shots --method screen\n"
             "  python run.py --cli --screen --interval 60 --count 3 --out shots\n"
+            "  python run.py --record --screen --record-fps 30 --record-resolution 1080p "
+            "--record-quality high --record-duration 10 --out videos\n"
             "  python run.py --selftest\n"
         ),
     )
@@ -201,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--interval", type=float, default=5.0, help="截图间隔秒数，默认 5")
     parser.add_argument("--count", type=int, default=0, help="最多保存多少张，0 = 不限")
-    parser.add_argument("--duration", type=float, default=0.0, help="最长运行秒数，0 = 不限")
+    parser.add_argument("--duration", type=float, default=0.0, help="截图最长运行秒数，0 = 不限")
     parser.add_argument("--delay", type=float, default=0.0, help="开始后延迟多少秒截第一张")
     parser.add_argument("--method", default=w.METHOD_AUTO,
                         choices=[w.METHOD_AUTO, w.METHOD_WGC, w.METHOD_PRINTWINDOW, w.METHOD_SCREEN],
@@ -212,7 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-activate", action="store_true",
                         help="屏幕区域方式截图前不把目标窗口切到前台（默认会切）")
     parser.add_argument("--ui", default="qt", choices=["qt", "tk"],
-                        help="界面实现：qt（PyQt5，默认）/ tk（旧版 tkinter）")
+                        help="界面实现：qt（PyQt6，默认）/ tk（tkinter）")
     parser.add_argument("--out", default=str(paths.default_capture_dir()),
                         help="保存目录，默认「程序目录\\ScreenCapture」")
     parser.add_argument("--format", default="png", choices=["png", "jpg", "bmp", "webp"],
@@ -226,6 +319,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-unchanged", action="store_true", help="画面与上一张相同则不保存")
     parser.add_argument("--no-manifest", action="store_true", help="不写 capture_manifest.csv")
     parser.add_argument("--quiet", action="store_true", help="只输出必要的保存信息")
+
+    # ---- 录屏 ----
+    parser.add_argument("--record", action="store_true",
+                        help="录屏模式：把目标录成 MP4（可调画质），配合下方参数使用")
+    parser.add_argument("--record-duration", type=float, default=10.0,
+                        help="录制时长（秒），默认 10")
+    parser.add_argument("--record-resolution", default="1080p",
+                        choices=["native", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
+                        help="录制分辨率档位，默认 1080p（native = 原始分辨率）")
+    parser.add_argument("--record-fps", type=int, default=30, help="录制帧率，默认 30")
+    parser.add_argument("--record-quality", default="high",
+                        choices=["low", "standard", "high", "ultra"],
+                        help="清晰度档位，默认 high（同一分辨率下越高越清晰、文件越大）")
+    parser.add_argument("--record-bitrate", type=int, default=0,
+                        help="码率 kbps；0 = 按分辨率与清晰度自动计算（默认）")
+    parser.add_argument("--record-profile", default="high", choices=["high", "main", "baseline"],
+                        help="H.264 档位，默认 high")
+    parser.add_argument("--record-input", default="auto", choices=["auto", "nv12"],
+                        help="编码输入色彩格式：auto（系统转换，省 CPU）/ nv12（程序转换）")
+    parser.add_argument("--record-scale", default="quality", choices=["quality", "fast"],
+                        help="取帧缩放方式：quality（更细腻，帧率上限约 30fps）/ "
+                             "fast（更快，720p 可达 50fps，适合 60fps 录制）")
+    parser.add_argument("--record-pattern", default="{app}_{date}_{time}",
+                        help="录像文件名模板，可用 {app} {date} {time} {datetime} {resolution} {fps}")
     return parser
 
 
@@ -245,6 +362,13 @@ def main(argv=None) -> int:
         return archive_now(args.archive_now or str(paths.default_capture_dir()),
                            delete_originals=not args.archive_keep)
 
+    if args.record:
+        try:
+            return run_record(args)
+        except ConfigError as exc:
+            _print(f"参数错误：{exc}", file=sys.stderr)
+            return 2
+
     if not args.cli:
         return launch_ui(args.ui)
 
@@ -256,7 +380,7 @@ def main(argv=None) -> int:
 
 
 def launch_ui(prefer: str = "qt") -> int:
-    """打开图形界面：默认 PyQt5，缺库时自动退回 tkinter。"""
+    """打开图形界面：默认 PyQt6，缺库时自动退回 tkinter。"""
     applog.setup_logging()
     if prefer == "qt":
         try:
@@ -264,7 +388,9 @@ def launch_ui(prefer: str = "qt") -> int:
 
             return launch_qt()
         except ImportError as exc:
-            _print(f"没有可用的 PyQt5（{exc}），改用 tkinter 界面。", file=sys.stderr)
+            _print(f"没有可用的 PyQt6（{exc}），改用 tkinter 界面。"
+                   f"可执行：pip install PyQt6 -i https://pypi.tuna.tsinghua.edu.cn/simple",
+                   file=sys.stderr)
     from .gui import launch as launch_tk
 
     return launch_tk()

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""自检：确认窗口枚举、截图、tkinter / Pillow 界面组件在当前环境可用。
+"""自检：确认窗口枚举、截图、录屏编码、tkinter / Pillow 界面组件在当前环境可用。
 
 打包成 exe 之后最需要验证的就是这些运行库是否被正确打进去，
 所以在源码和 exe 里都可以运行：
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -89,15 +90,54 @@ def run_selftest(output_dir: Optional[str] = None) -> int:
         return f"{info.process_name} {image.width}x{image.height}（WGC 无视遮挡）"
 
     def qt_check() -> str:
-        from PyQt5.QtCore import QT_VERSION_STR
-        from PyQt5.QtWidgets import QApplication, QLabel
+        from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+        from PyQt6.QtWidgets import QApplication, QLabel
 
         app = QApplication.instance() or QApplication([])
         label = QLabel("自检")
         label.resize(80, 30)
         pixmap = label.grab()
         del app
-        return f"PyQt5 {QT_VERSION_STR}，控件渲染 {pixmap.width()}x{pixmap.height()}"
+        return f"PyQt6 {PYQT_VERSION_STR}（Qt {QT_VERSION_STR}），控件渲染 {pixmap.width()}x{pixmap.height()}"
+
+    def video_encoder() -> str:
+        """录屏自检：确认能用 Media Foundation 编出 H.264 的 MP4。"""
+        from . import recorder as rec
+
+        ok, message = rec.probe_encoder()
+        if not ok:
+            raise RuntimeError(message)
+        return message
+
+    def video_record() -> str:
+        """真实录一小段屏幕（0.6 秒）并检查产出的 MP4。"""
+        from . import recorder as rec
+        from .engine import Target, TARGET_SCREEN
+
+        config = rec.RecordingConfig(
+            target=Target(kind=TARGET_SCREEN),
+            output_dir=str(target_dir),
+            resolution="480p",
+            fps=15,
+            quality="low",
+            filename_pattern="selftest_record",
+            start_delay=0.0,
+            max_duration=0.6,
+            capture_cursor=True,
+        )
+        engine = rec.RecorderEngine(config)
+        engine.start(countdown=False)
+        deadline = time.time() + 20
+        while engine.running and time.time() < deadline:
+            time.sleep(0.1)
+        result = engine.stop_and_wait(timeout=30)
+        if not result.files:
+            raise RuntimeError("没有生成录像文件" + (f"：{engine.error}" if engine.error else ""))
+        path = Path(result.files[0])
+        size = path.stat().st_size if path.exists() else 0
+        if size < 1024:
+            raise RuntimeError(f"录像文件过小（{size} 字节）")
+        return f"{path.name}，{result.frames} 帧，{size / 1024:.0f} KB"
 
     target_dir = Path(output_dir).expanduser() if output_dir else Path(tempfile.gettempdir())
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -137,7 +177,9 @@ def run_selftest(output_dir: Optional[str] = None) -> int:
     check("WGC 窗口捕获", wgc_capture)
     check("保存 PNG 文件", save_png)
     check("tkinter / Pillow 界面组件", tk_preview)
-    check("PyQt5 界面组件", qt_check)
+    check("Qt 界面组件（PyQt6）", qt_check)
+    check("录屏编码器（H.264 / MP4）", video_encoder)
+    check("录屏实拍（0.6 秒）", video_record)
 
     frozen = bool(getattr(sys, "frozen", False))
     lines = [

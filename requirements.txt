@@ -1,4 +1,7 @@
-# 运行库依赖：截图与窗口操作只用 Pillow；界面用 PyQt5；窗口捕获用 wgc_python（Windows Graphics Capture）
+# 运行库依赖：截图与窗口操作只用 Pillow；界面用 Qt；窗口捕获用 wgc_python（Windows Graphics Capture）
 Pillow>=9.1.0
-PyQt5>=5.15
+# 界面绑定：PyQt6 优先，装 PyQt5 也能跑（见 screen_capture/qt_compat.py）
+PyQt6>=6.4
+# 如果你的环境还没有 PyQt6 的轮子，可以改成 PyQt5：
+# PyQt5>=5.15
 wgc_python>=2.0

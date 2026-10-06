@@ -336,9 +336,8 @@ class SettingsLocationTests(unittest.TestCase):
     def test_settings_use_ini_file_not_registry(self):
         import os as _os
 
-        from PyQt5.QtCore import QSettings
-
         from screen_capture.gui_qt import make_settings, settings_path
+        from PyQt6.QtCore import QSettings
 
         target = Path(OUT_DIR) / "settings_check" / "settings.ini"
         _os.environ["SCREEN_CAPTURE_SETTINGS_FILE"] = str(target)
@@ -349,7 +348,7 @@ class SettingsLocationTests(unittest.TestCase):
             settings.sync()
             self.assertTrue(target.exists(), "设置应写入 ini 文件")
             self.assertIn("[General]", target.read_text(encoding="utf-8"))
-            self.assertEqual(QSettings(str(target), QSettings.IniFormat).value("probe"), "ok")
+            self.assertEqual(QSettings(str(target), QSettings.Format.IniFormat).value("probe"), "ok")
         finally:
             _os.environ.pop("SCREEN_CAPTURE_SETTINGS_FILE", None)
         print("  [info] 设置写入 ini 文件（不碰注册表）")
